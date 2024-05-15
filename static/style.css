@@ -1,0 +1,29 @@
+body {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    font-family: Arial, sans-serif;
+}
+
+#tictactoe {
+    margin-right: 20px;
+}
+
+#chat {
+    width: 200px;
+}
+
+#messages {
+    list-style-type: none;
+    padding: 0;
+    height: 300px;
+    overflow-y: scroll;
+    margin: 0 0 10px 0;
+    border: 1px solid #ccc;
+}
+
+#messageInput {
+    width: 100%;
+    box-sizing: border-box;
+}
