@@ -11,9 +11,18 @@
     {% endfor %}
     <br>
 {% endfor %}
+
+{% for player, message in messages %}
+    <p>{{ player }}: {{ message }}</p>
+{% endfor %}
+
 <form method="POST">
     <input type="submit" value="Reset Game">
+    <input type="text" name="message" placeholder="Type your message here">
+    <input type="submit" value="Send">
 </form>
+
+
 <a href="/player1">Player 1</a>
 <a href="/player2">Player 2</a>
 </body>

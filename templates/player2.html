@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Player 1 Page</title>
+    <title>Player 2 Page</title>
 </head>
 <body>
 <h1>Player 2 Page</h1>
@@ -10,6 +10,13 @@
     Column: <input type="number" name="col" min="0" max="2"><br>
     <input type="submit" value="Make Move">
 </form>
+<form method="POST">
+    <input type="text" name="message" placeholder="Type your message here">
+    <input type="submit" value="Send">
+</form>
+{% for player, message in messages %}
+    <p>{{ player }}: {{ message }}</p>
+{% endfor %}
 <a href="/">Home</a>
 </body>
 </html>
