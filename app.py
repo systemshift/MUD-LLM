@@ -22,7 +22,7 @@ def player1():
             row = request.form.get('row')
             col = request.form.get('col')
             if row is not None and col is not None:
-                game.make_move('player1', int(row), int(col))
+                game.make_move('player1', int(row), int(col), 1)
         return redirect(url_for('home'))
     return render_template('player1.html', messages=chat.messages)
 
@@ -36,7 +36,7 @@ def player2():
             row = request.form.get('row')
             col = request.form.get('col')
             if row is not None and col is not None:
-                game.make_move('player2', int(row), int(col))
+                game.make_move('player2', int(row), int(col), 1)
         return redirect(url_for('home'))
     return render_template('player2.html', messages=chat.messages)
 
