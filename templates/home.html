@@ -5,13 +5,19 @@
     </head>
 <body>
 <h1>Home Page</h1>
-{% for row in board %}
-    {% for cell in row %}
-        {{ cell if cell else ' ' }}
+<div class="board">
+    {% for layer in board %}
+        <table>
+            {% for row in layer %}
+                <tr>
+                    {% for cell in row %}
+                        <td>{{ cell or '-' }}</td>
+                    {% endfor %}
+                </tr>
+            {% endfor %}
+        </table>
     {% endfor %}
-    <br>
-{% endfor %}
-
+</div>
 {% for player, message in messages %}
     <p>{{ player }}: {{ message }}</p>
 {% endfor %}
