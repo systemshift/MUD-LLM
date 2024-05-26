@@ -30,5 +30,38 @@
 
 <a href="/player1">Player 1</a>
 <a href="/player2">Player 2</a>
+<script src="https://cdn.jsdelivr.net/npm/three@0.125.2/build/three.min.js"></script>
+<script>
+    var scene = new THREE.Scene();
+    var camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    var renderer = new THREE.WebGLRenderer();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    var geometry = new THREE.BoxGeometry(1, 1, 1);
+    var material = new THREE.MeshBasicMaterial({color: 0x00ff00});
+
+    var board = {{ board|tojson|safe }};  // Assumes 'board' is a 3D list passed from Flask
+
+    for (var z = 0; z < board.length; z++) {
+        for (var y = 0; y < board[z].length; y++) {
+            for (var x = 0; x < board[z][y].length; x++) {
+                if (board[z][y][x] !== null) {
+                    var cube = new THREE.Mesh(geometry, material);
+                    cube.position.set(x, y, z);
+                    scene.add(cube);
+                }
+            }
+        }
+    }
+
+    camera.position.z = 5;
+
+    function animate() {
+        requestAnimationFrame(animate);
+        renderer.render(scene, camera);
+    }
+    animate();
+</script>
 </body>
 </html>
