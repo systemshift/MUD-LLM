@@ -31,34 +31,73 @@
 <a href="/player1">Player 1</a>
 <a href="/player2">Player 2</a>
 <script src="https://cdn.jsdelivr.net/npm/three@0.125.2/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.125.2/examples/js/controls/OrbitControls.js"></script>
 <script>
     var scene = new THREE.Scene();
     var camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-    var renderer = new THREE.WebGLRenderer();
+    var renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
 
-    var geometry = new THREE.BoxGeometry(1, 1, 1);
-    var material = new THREE.MeshBasicMaterial({color: 0x00ff00});
+    // Adding OrbitControls
+    var controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.25;
+    controls.enableZoom = true;
+
+    // Adding lighting
+    var ambientLight = new THREE.AmbientLight(0x404040);
+    scene.add(ambientLight);
+
+    var directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+    directionalLight.position.set(1, 1, 1).normalize();
+    scene.add(directionalLight);
+
+    // Adding a grid helper
+    var gridHelper = new THREE.GridHelper(10, 10);
+    scene.add(gridHelper);
+
+    // Textures for X and O
+    var loader = new THREE.TextureLoader();
+    var textureX = loader.load('/mnt/data/A_high-quality_3D_texture_of_the_letter_\'X\'_in_red.png'); // Replace with the path to the X texture
+    var textureO = loader.load('/mnt/data/A_high-quality_3D_texture_of_the_letter_\'O\'_in_blu.png'); // Replace with the path to the O texture
+
+    var materials = [
+        new THREE.MeshBasicMaterial({ map: textureX }), // X
+        new THREE.MeshBasicMaterial({ map: textureO }), // O
+        new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true })  // Blank (just in case)
+    ];
 
     var board = {{ board|tojson|safe }};  // Assumes 'board' is a 3D list passed from Flask
 
+    var spacing = 1.2;  // Spacing between cubes
     for (var z = 0; z < board.length; z++) {
         for (var y = 0; y < board[z].length; y++) {
             for (var x = 0; x < board[z][y].length; x++) {
                 if (board[z][y][x] !== null) {
-                    var cube = new THREE.Mesh(geometry, material);
-                    cube.position.set(x, y, z);
+                    var material = materials[board[z][y][x]];  // Select material based on board value
+                    var cubeGeometry = new THREE.BoxGeometry(1, 1, 1);
+                    
+                    // Adding wireframe to the cube
+                    var wireframe = new THREE.EdgesGeometry(cubeGeometry);
+                    var lineMaterial = new THREE.LineBasicMaterial({ color: 0x000000 });
+                    var line = new THREE.LineSegments(wireframe, lineMaterial);
+
+                    var cube = new THREE.Mesh(cubeGeometry, material);
+                    cube.add(line);  // Adding wireframe to the cube
+
+                    cube.position.set(x * spacing, y * spacing, z * spacing);
                     scene.add(cube);
                 }
             }
         }
     }
 
-    camera.position.z = 5;
+    camera.position.z = 7;
 
     function animate() {
         requestAnimationFrame(animate);
+        controls.update();  // Required if enableDamping or autoRotate are set to true
         renderer.render(scene, camera);
     }
     animate();
