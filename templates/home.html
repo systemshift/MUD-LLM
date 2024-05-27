@@ -37,6 +37,9 @@
     var camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
     var renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
+    // Set the background color to white
+    renderer.setClearColor(0xffffff);
+
     document.body.appendChild(renderer.domElement);
 
     // Adding OrbitControls
@@ -59,8 +62,8 @@
 
     // Textures for X and O
     var loader = new THREE.TextureLoader();
-    var textureX = loader.load('/mnt/data/A_high-quality_3D_texture_of_the_letter_\'X\'_in_red.png'); // Replace with the path to the X texture
-    var textureO = loader.load('/mnt/data/A_high-quality_3D_texture_of_the_letter_\'O\'_in_blu.png'); // Replace with the path to the O texture
+    var textureX = loader.load('{{ url_for('static', filename='path_to_X_texture.png') }}'); // Replace with the path to the X texture
+    var textureO = loader.load('{{ url_for('static', filename='path_to_O_texture.png') }}'); // Replace with the path to the O texture
 
     var materials = [
         new THREE.MeshBasicMaterial({ map: textureX }), // X
@@ -71,21 +74,23 @@
     var board = {{ board|tojson|safe }};  // Assumes 'board' is a 3D list passed from Flask
 
     var spacing = 1.2;  // Spacing between cubes
+
+    // Create grid lines for empty cells
+    var gridLineMaterial = new THREE.LineBasicMaterial({ color: 0x000000 });
     for (var z = 0; z < board.length; z++) {
         for (var y = 0; y < board[z].length; y++) {
             for (var x = 0; x < board[z][y].length; x++) {
+                // Create a cube outline for the grid
+                var cubeGeometry = new THREE.BoxGeometry(1, 1, 1);
+                var edges = new THREE.EdgesGeometry(cubeGeometry);
+                var line = new THREE.LineSegments(edges, gridLineMaterial);
+                line.position.set(x * spacing, y * spacing, z * spacing);
+                scene.add(line);
+
+                // Add actual X and O cubes
                 if (board[z][y][x] !== null) {
                     var material = materials[board[z][y][x]];  // Select material based on board value
-                    var cubeGeometry = new THREE.BoxGeometry(1, 1, 1);
-                    
-                    // Adding wireframe to the cube
-                    var wireframe = new THREE.EdgesGeometry(cubeGeometry);
-                    var lineMaterial = new THREE.LineBasicMaterial({ color: 0x000000 });
-                    var line = new THREE.LineSegments(wireframe, lineMaterial);
-
                     var cube = new THREE.Mesh(cubeGeometry, material);
-                    cube.add(line);  // Adding wireframe to the cube
-
                     cube.position.set(x * spacing, y * spacing, z * spacing);
                     scene.add(cube);
                 }
