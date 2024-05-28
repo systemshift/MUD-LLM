@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Player 4 Page</title>
+</head>
+<body>
+<h1>Player 4 Page</h1>
+<form method="POST">
+    Row: <input type="number" name="row" min="0" max="2"><br>
+    Column: <input type="number" name="col" min="0" max="2"><br>
+    <input type="submit" value="Make Move">
+</form>
+<form method="POST">
+    <input type="text" name="message" placeholder="Type your message here">
+    <input type="submit" value="Send">
+</form>
+{% for player, message in messages %}
+    <p>{{ player }}: {{ message }}</p>
+{% endfor %}
+<a href="/">Home</a>
+</body>
+</html>
