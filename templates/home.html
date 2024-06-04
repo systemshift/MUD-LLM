@@ -1,127 +1,235 @@
 <!DOCTYPE html>
 <html>
-    <head>
-        <title>Home Page</title>
-        <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='styles.css') }}">
-    </head>
+<head>
+    <title>Home Page</title>
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='styles.css') }}">
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            font-family: Arial, sans-serif;
+        }
+        .container {
+            display: flex;
+            width: 100%;
+            justify-content: space-around;
+        }
+        .tab {
+            flex: 1;
+            overflow: hidden;
+            border: 1px solid #ccc;
+            background-color: #f1f1f1;
+            padding: 10px;
+        }
+        .tab button {
+            display: block;
+            width: 100%;
+            background-color: inherit;
+            border: none;
+            outline: none;
+            cursor: pointer;
+            padding: 14px 16px;
+            transition: 0.3s;
+            font-size: 17px;
+        }
+        .tab button:hover {
+            background-color: #ddd;
+        }
+        .tab button.active {
+            background-color: #ccc;
+        }
+        .tabcontent {
+            display: none;
+            padding: 6px 12px;
+            border: 1px solid #ccc;
+            border-top: none;
+        }
+        .iframe-container {
+            flex: 2;
+            padding: 20px;
+        }
+        iframe {
+            width: 100%;
+            height: 600px;
+            border: none;
+        }
+        .chat {
+            flex: 1;
+            padding: 20px;
+            border: 1px solid #ccc;
+        }
+        .board-state {
+            flex: 1;
+            padding: 20px;
+            border: 1px solid #ccc;
+            background-color: #f1f1f1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        #threejs-container {
+            width: 100%;
+            height: 400px;
+        }
+    </style>
+</head>
 <body>
-<h1>Home Page</h1>
-<div class="board">
-    {% for layer in board %}
-        <table>
-            {% for row in layer %}
-                <tr>
-                    {% for cell in row %}
-                        <td>{{ cell or '-' }}</td>
-                    {% endfor %}
-                </tr>
-            {% endfor %}
-        </table>
-    {% endfor %}
+
+<h1>High Dimensional Tic-Tac-Toe</h1>
+
+<div class="container">
+    <!-- Tab links -->
+    <div class="tab">
+        <button class="tablinks" onclick="openTab(event, 'Player1')">Player 1</button>
+        <button class="tablinks" onclick="openTab(event, 'Player2')">Player 2</button>
+        <button class="tablinks" onclick="openTab(event, 'Player3')">Player 3</button>
+        <button class="tablinks" onclick="openTab(event, 'Player4')">Player 4</button>
+        <div class="board-state">
+            <h2>3D Board State</h2>
+            <div id="threejs-container"></div>
+        </div>
+    </div>
+
+    <!-- Tab content -->
+    <div class="iframe-container">
+        <div id="Player1" class="tabcontent">
+            <iframe src="/player1"></iframe>
+        </div>
+        <div id="Player2" class="tabcontent">
+            <iframe src="/player2"></iframe>
+        </div>
+        <div id="Player3" class="tabcontent">
+            <iframe src="/player3"></iframe>
+        </div>
+        <div id="Player4" class="tabcontent">
+            <iframe src="/player4"></iframe>
+        </div>
+    </div>
+
+    <!-- Chat -->
+    <div class="chat">
+        <h2>Global Chat</h2>
+        {% for player, message in messages %}
+            <p>{{ player }}: {{ message }}</p>
+        {% endfor %}
+    </div>
 </div>
-{% for player, message in messages %}
-    <p>{{ player }}: {{ message }}</p>
-{% endfor %}
 
 <form method="POST">
     <input type="submit" value="Reset Game">
 </form>
 
-<a href="/player1">Player 1</a>
-<a href="/player2">Player 2</a>
-<a href="/player3">Player 3</a>
-<a href="/player4">Player 4</a>
 <script src="https://cdn.jsdelivr.net/npm/three@0.125.2/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.125.2/examples/js/controls/OrbitControls.js"></script>
 <script>
-    var scene = new THREE.Scene();
-    var camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-    var renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    // Set the background color to white
-    renderer.setClearColor(0xffffff);
+    function openTab(evt, tabName) {
+        var i, tabcontent, tablinks;
+        tabcontent = document.getElementsByClassName("tabcontent");
+        for (i = 0; i < tabcontent.length; i++) {
+            tabcontent[i].style.display = "none";
+        }
+        tablinks = document.getElementsByClassName("tablinks");
+        for (i = 0; i < tablinks.length; i++) {
+            tablinks[i].className = tablinks[i].className.replace(" active", "");
+        }
+        document.getElementById(tabName).style.display = "block";
+        evt.currentTarget.className += " active";
+    }
 
-    document.body.appendChild(renderer.domElement);
+    // Default open tab
+    document.addEventListener("DOMContentLoaded", function() {
+        document.querySelector(".tablinks").click();
+    });
 
-    // Adding OrbitControls
-    var controls = new THREE.OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.25;
-    controls.enableZoom = true;
+    // Three.js code
+    document.addEventListener("DOMContentLoaded", function() {
+        var scene = new THREE.Scene();
+        var camera = new THREE.PerspectiveCamera(75, document.getElementById('threejs-container').clientWidth / 400, 0.1, 1000);
+        var renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(document.getElementById('threejs-container').clientWidth, 400);
+        renderer.setClearColor(0xffffff);
 
-    // Adding lighting
-    var ambientLight = new THREE.AmbientLight(0x404040);
-    scene.add(ambientLight);
+        document.getElementById('threejs-container').appendChild(renderer.domElement);
 
-    var directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
-    directionalLight.position.set(1, 1, 1).normalize();
-    scene.add(directionalLight);
+        var controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.25;
+        controls.enableZoom = true;
 
-    // Adding a grid helper
-    var gridHelper = new THREE.GridHelper(10, 10);
-    scene.add(gridHelper);
+        var ambientLight = new THREE.AmbientLight(0x404040);
+        scene.add(ambientLight);
 
-    var materials = [
-        new THREE.MeshBasicMaterial({ color: 0x0000ff }), // X is blue
-        new THREE.MeshBasicMaterial({ color: 0x00ff00 }), // O is green
-        new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true })  // Blank (just in case)
-    ];
+        var directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+        directionalLight.position.set(1, 1, 1).normalize();
+        scene.add(directionalLight);
 
-    var differentLayerMaterialRed = new THREE.MeshBasicMaterial({ color: 0xff0000, opacity: 0.3, transparent: true }); // Transparent red for vertical layer
-    var differentLayerMaterialBlue = new THREE.MeshBasicMaterial({ color: 0x0000ff, opacity: 0.3, transparent: true }); // Transparent blue for horizontal layer
+        var gridHelper = new THREE.GridHelper(10, 10);
+        scene.add(gridHelper);
 
-    var board = {{ board|tojson|safe }};  // Assumes 'board' is a 3D list passed from Flask
+        var materials = [
+            new THREE.MeshBasicMaterial({ color: 0x0000ff }), // X is blue
+            new THREE.MeshBasicMaterial({ color: 0x00ff00 }), // O is green
+            new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true })  // Blank (just in case)
+        ];
 
-    var spacing = 1.2;  // Spacing between cubes
+        var differentLayerMaterialRed = new THREE.MeshBasicMaterial({ color: 0xff0000, opacity: 0.3, transparent: true }); // Transparent red for vertical layer
+        var differentLayerMaterialBlue = new THREE.MeshBasicMaterial({ color: 0x0000ff, opacity: 0.3, transparent: true }); // Transparent blue for horizontal layer
 
-    // Highlight vertical layer with a thin box (Red)
-    var verticalLayerToHighlight = 1; // Change to the layer index you want to highlight
+        var board = {{ board|tojson|safe }};  // Assumes 'board' is a 3D list passed from Flask
 
-    var boxThickness = 0.1; // Thickness of the highlighted layer box
-    var verticalLayerBoxGeometry = new THREE.BoxGeometry(board[0][0].length * spacing, board.length * spacing, boxThickness);
-    var verticalLayerBox = new THREE.Mesh(verticalLayerBoxGeometry, differentLayerMaterialRed);
-    verticalLayerBox.position.set((board[0][0].length - 1) * spacing / 2, (board.length - 1) * spacing / 2, verticalLayerToHighlight * spacing);
-    scene.add(verticalLayerBox);
+        var spacing = 1.2;  // Spacing between cubes
 
-    // Highlight horizontal layer with a thin box (Blue)
-    var horizontalLayerToHighlight = 1; // Change to the layer index you want to highlight
-    var horizontalLayerBoxGeometry = new THREE.BoxGeometry(board[0][0].length * spacing, boxThickness, board[0].length * spacing);
-    var horizontalLayerBox = new THREE.Mesh(horizontalLayerBoxGeometry, differentLayerMaterialBlue);
-    horizontalLayerBox.position.set((board[0][0].length - 1) * spacing / 2, horizontalLayerToHighlight * spacing, (board[0].length - 1) * spacing / 2);
-    scene.add(horizontalLayerBox);
+        // Highlight vertical layer with a thin box (Red)
+        var verticalLayerToHighlight = 1; // Change to the layer index you want to highlight
 
-    // Create grid lines for empty cells
-    var gridLineMaterial = new THREE.LineBasicMaterial({ color: 0x000000 });
-    for (var z = 0; z < board.length; z++) {
-        for (var y = 0; y < board[z].length; y++) {
-            for (var x = 0; x < board[z][y].length; x++) {
-                // Create a cube outline for the grid
-                var cubeGeometry = new THREE.BoxGeometry(1, 1, 1);
-                var edges = new THREE.EdgesGeometry(cubeGeometry);
-                var line = new THREE.LineSegments(edges, gridLineMaterial);
-                line.position.set(x * spacing, y * spacing, z * spacing);
-                scene.add(line);
+        var boxThickness = 0.1; // Thickness of the highlighted layer box
+        var verticalLayerBoxGeometry = new THREE.BoxGeometry(board[0][0].length * spacing, board.length * spacing, boxThickness);
+        var verticalLayerBox = new THREE.Mesh(verticalLayerBoxGeometry, differentLayerMaterialRed);
+        verticalLayerBox.position.set((board[0][0].length - 1) * spacing / 2, (board.length - 1) * spacing / 2, verticalLayerToHighlight * spacing);
+        scene.add(verticalLayerBox);
 
-                // Add actual X and O cubes
-                if (board[z][y][x] !== null) {
-                    var material = materials[board[z][y][x]];  // Select material based on board value
+        // Highlight horizontal layer with a thin box (Blue)
+        var horizontalLayerToHighlight = 1; // Change to the layer index you want to highlight
+        var horizontalLayerBoxGeometry = new THREE.BoxGeometry(board[0][0].length * spacing, boxThickness, board[0].length * spacing);
+        var horizontalLayerBox = new THREE.Mesh(horizontalLayerBoxGeometry, differentLayerMaterialBlue);
+        horizontalLayerBox.position.set((board[0][0].length - 1) * spacing / 2, horizontalLayerToHighlight * spacing, (board[0].length - 1) * spacing / 2);
+        scene.add(horizontalLayerBox);
 
-                    var cube = new THREE.Mesh(cubeGeometry, material);
-                    cube.position.set(x * spacing, y * spacing, z * spacing);
-                    scene.add(cube);
+        // Create grid lines for empty cells
+        var gridLineMaterial = new THREE.LineBasicMaterial({ color: 0x000000 });
+        for (var z = 0; z < board.length; z++) {
+            for (var y = 0; y < board[z].length; y++) {
+                for (var x = 0; x < board[z][y].length; x++) {
+                    // Create a cube outline for the grid
+                    var cubeGeometry = new THREE.BoxGeometry(1, 1, 1);
+                    var edges = new THREE.EdgesGeometry(cubeGeometry);
+                    var line = new THREE.LineSegments(edges, gridLineMaterial);
+                    line.position.set(x * spacing, y * spacing, z * spacing);
+                    scene.add(line);
+
+                    // Add actual X and O cubes
+                    if (board[z][y][x] !== null) {
+                        var material = materials[board[z][y][x]];  // Select material based on board value
+
+                        var cube = new THREE.Mesh(cubeGeometry, material);
+                        cube.position.set(x * spacing, y * spacing, z * spacing);
+                        scene.add(cube);
+                    }
                 }
             }
         }
-    }
 
-    camera.position.z = 10;
+        camera.position.z = 10;
 
-    function animate() {
-        requestAnimationFrame(animate);
-        controls.update();  // Required if enableDamping or autoRotate are set to true
-        renderer.render(scene, camera);
-    }
-    animate();
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();  // Required if enableDamping or autoRotate are set to true
+            renderer.render(scene, camera);
+        }
+        animate();
+    });
 </script>
+
 </body>
 </html>

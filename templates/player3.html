@@ -2,21 +2,53 @@
 <html>
 <head>
     <title>Player 3 Page</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 </head>
 <body>
 <h1>Player 3 Page</h1>
-<form method="POST">
+<form id="moveForm" method="POST">
     Row: <input type="number" name="row" min="0" max="2"><br>
     Column: <input type="number" name="col" min="0" max="2"><br>
     <input type="submit" value="Make Move">
 </form>
-<form method="POST">
+<form id="chatForm" method="POST">
     <input type="text" name="message" placeholder="Type your message here">
     <input type="submit" value="Send">
 </form>
-{% for player, message in messages %}
-    <p>{{ player }}: {{ message }}</p>
-{% endfor %}
-<a href="/">Home</a>
+<div id="messages">
+    {% for player, message in messages %}
+        <p>{{ player }}: {{ message }}</p>
+    {% endfor %}
+</div>
+
+<script>
+    $(document).ready(function() {
+        $('#moveForm').submit(function(event) {
+            event.preventDefault();
+            $.ajax({
+                url: '/player3',  // Change to the correct URL for your player
+                type: 'POST',
+                data: $(this).serialize(),
+                success: function(response) {
+                    // Update the board or any relevant part of the page with the response
+                    $('#messages').html(response.messagesHtml);
+                }
+            });
+        });
+
+        $('#chatForm').submit(function(event) {
+            event.preventDefault();
+            $.ajax({
+                url: '/player3',  // Change to the correct URL for your player
+                type: 'POST',
+                data: $(this).serialize(),
+                success: function(response) {
+                    // Update the chat messages
+                    $('#messages').html(response.messagesHtml);
+                }
+            });
+        });
+    });
+</script>
 </body>
 </html>
