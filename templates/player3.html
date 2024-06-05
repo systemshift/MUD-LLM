@@ -2,53 +2,117 @@
 <html>
 <head>
     <title>Player 3 Page</title>
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='styles.css') }}">
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            font-family: Arial, sans-serif;
+        }
+        .container {
+            display: flex;
+            width: 100%;
+            justify-content: space-around;
+        }
+        .player-page {
+            flex: 2;
+            padding: 20px;
+            border: 1px solid #ccc;
+            background-color: #f1f1f1;
+        }
+        .chat {
+            flex: 1;
+            padding: 20px;
+            border: 1px solid #ccc;
+            background-color: #f1f1f1;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            height: 400px;
+        }
+        .messages {
+            flex-grow: 1;
+            overflow-y: auto;
+            margin-bottom: 10px;
+        }
+        .form-container {
+            margin-bottom: 20px;
+        }
+        .chat form {
+            display: flex;
+        }
+        .chat input[type="text"] {
+            flex-grow: 1;
+            margin-right: 10px;
+        }
+    </style>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 </head>
 <body>
+
 <h1>Player 3 Page</h1>
-<form id="moveForm" method="POST">
-    Row: <input type="number" name="row" min="0" max="2"><br>
-    Column: <input type="number" name="col" min="0" max="2"><br>
-    <input type="submit" value="Make Move">
-</form>
-<form id="chatForm" method="POST">
-    <input type="text" name="message" placeholder="Type your message here">
-    <input type="submit" value="Send">
-</form>
-<div id="messages">
-    {% for player, message in messages %}
-        <p>{{ player }}: {{ message }}</p>
-    {% endfor %}
+
+<div class="container">
+    <div class="player-page">
+        <div class="form-container">
+            <form id="move-form" method="POST">
+                <label for="row">Row:</label>
+                <input type="number" id="row" name="row" min="0" max="2"><br>
+                <label for="col">Column:</label>
+                <input type="number" id="col" name="col" min="0" max="2"><br>
+                <input type="submit" value="Make Move">
+            </form>
+        </div>
+    </div>
+
+    <!-- Chat -->
+    <div class="chat">
+        <div class="messages" id="messages">
+            {% for player, message in messages %}
+                <p>{{ player }}: {{ message }}</p>
+            {% endfor %}
+        </div>
+        <form id="chat-form" method="POST">
+            <input type="text" name="message" placeholder="Type your message here">
+            <input type="submit" value="Send">
+        </form>
+    </div>
 </div>
 
 <script>
     $(document).ready(function() {
-        $('#moveForm').submit(function(event) {
+        $('#chat-form').submit(function(event) {
             event.preventDefault();
             $.ajax({
-                url: '/player3',  // Change to the correct URL for your player
                 type: 'POST',
+                url: '{{ url_for("player3") }}',
                 data: $(this).serialize(),
                 success: function(response) {
-                    // Update the board or any relevant part of the page with the response
                     $('#messages').html(response.messagesHtml);
+                    $('#chat-form')[0].reset();
+                    $('#messages').scrollTop($('#messages')[0].scrollHeight);
                 }
             });
         });
 
-        $('#chatForm').submit(function(event) {
+        $('#move-form').submit(function(event) {
             event.preventDefault();
             $.ajax({
-                url: '/player3',  // Change to the correct URL for your player
                 type: 'POST',
+                url: '{{ url_for("player3") }}',
                 data: $(this).serialize(),
                 success: function(response) {
-                    // Update the chat messages
                     $('#messages').html(response.messagesHtml);
+                    $('#messages').scrollTop($('#messages')[0].scrollHeight);
                 }
             });
         });
+
+        // Scroll to the bottom of the messages on page load
+        $('#messages').scrollTop($('#messages')[0].scrollHeight);
     });
 </script>
+
 </body>
 </html>

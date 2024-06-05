@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, redirect, url_for
+from flask import Flask, render_template, request, jsonify
 from tictactoe import TicTacToe
 from chat import Chat
 
@@ -21,7 +21,7 @@ def player1():
             row = request.form.get('row')
             col = request.form.get('col')
             if row is not None and col is not None:
-                game.make_move('player1', int(row), int(col), 0)  # Assuming the z layer is 0
+                game.make_move('player1', int(row), int(col))
         return jsonify({
             'messagesHtml': render_template('messages.html', messages=chat.messages)
         })
@@ -36,11 +36,12 @@ def player2():
             row = request.form.get('row')
             col = request.form.get('col')
             if row is not None and col is not None:
-                game.make_move('player2', int(row), int(col), 0)  # Assuming the z layer is 0
+                game.make_move('player2', int(row), int(col))
         return jsonify({
             'messagesHtml': render_template('messages.html', messages=chat.messages)
         })
     return render_template('player2.html', messages=chat.messages, board=game.board)
+
 
 @app.route('/player3', methods=['GET', 'POST'])
 def player3():
@@ -51,11 +52,12 @@ def player3():
             row = request.form.get('row')
             col = request.form.get('col')
             if row is not None and col is not None:
-                game.make_move('player3', int(row), int(col), 0)  # Assuming the z layer is 0
+                game.make_move('player3', int(row), int(col))
         return jsonify({
             'messagesHtml': render_template('messages.html', messages=chat.messages)
         })
     return render_template('player3.html', messages=chat.messages, board=game.board)
+
 
 @app.route('/player4', methods=['GET', 'POST'])
 def player4():
@@ -66,11 +68,20 @@ def player4():
             row = request.form.get('row')
             col = request.form.get('col')
             if row is not None and col is not None:
-                game.make_move('player4', int(row), int(col), 0)  # Assuming the z layer is 0
+                game.make_move('player4', int(row), int(col))
         return jsonify({
             'messagesHtml': render_template('messages.html', messages=chat.messages)
         })
     return render_template('player4.html', messages=chat.messages, board=game.board)
+
+
+@app.route('/global_chat', methods=['GET', 'POST'])
+def global_chat():
+    if request.method == 'POST':
+        chat.add_message(request.form['player'], request.form['message'])
+    return jsonify({
+        'messagesHtml': render_template('messages.html', messages=chat.messages)
+    })
 
 if __name__ == '__main__':
     app.run(debug=True)

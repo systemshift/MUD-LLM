@@ -20,7 +20,6 @@
             overflow: hidden;
             border: 1px solid #ccc;
             background-color: #f1f1f1;
-            padding: 10px;
         }
         .tab button {
             display: block;
@@ -58,8 +57,28 @@
             flex: 1;
             padding: 20px;
             border: 1px solid #ccc;
+            background-color: #f1f1f1;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            height: 400px;
         }
-        .board-state {
+        .messages {
+            flex-grow: 1;
+            overflow-y: auto;
+            margin-bottom: 10px;
+        }
+        .form-container {
+            margin-bottom: 20px;
+        }
+        .chat form {
+            display: flex;
+        }
+        .chat input[type="text"] {
+            flex-grow: 1;
+            margin-right: 10px;
+        }
+        .board-container {
             flex: 1;
             padding: 20px;
             border: 1px solid #ccc;
@@ -68,11 +87,14 @@
             flex-direction: column;
             align-items: center;
         }
-        #threejs-container {
+        #board-canvas {
             width: 100%;
             height: 400px;
         }
     </style>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.125.2/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.125.2/examples/js/controls/OrbitControls.js"></script>
 </head>
 <body>
 
@@ -85,10 +107,6 @@
         <button class="tablinks" onclick="openTab(event, 'Player2')">Player 2</button>
         <button class="tablinks" onclick="openTab(event, 'Player3')">Player 3</button>
         <button class="tablinks" onclick="openTab(event, 'Player4')">Player 4</button>
-        <div class="board-state">
-            <h2>3D Board State</h2>
-            <div id="threejs-container"></div>
-        </div>
     </div>
 
     <!-- Tab content -->
@@ -107,12 +125,18 @@
         </div>
     </div>
 
-    <!-- Chat -->
+    <!-- Global Chat -->
     <div class="chat">
         <h2>Global Chat</h2>
-        {% for player, message in messages %}
-            <p>{{ player }}: {{ message }}</p>
-        {% endfor %}
+        <div class="messages" id="global-messages">
+            {% for player, message in messages %}
+                <p>{{ player }}: {{ message }}</p>
+            {% endfor %}
+        </div>
+        <form id="global-chat-form">
+            <input type="text" name="message" placeholder="Type your message here" required>
+            <input type="submit" value="Send">
+        </form>
     </div>
 </div>
 
@@ -120,8 +144,11 @@
     <input type="submit" value="Reset Game">
 </form>
 
-<script src="https://cdn.jsdelivr.net/npm/three@0.125.2/build/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.125.2/examples/js/controls/OrbitControls.js"></script>
+<div class="board-container">
+    <h2>3D Board State</h2>
+    <div id="board-canvas"></div>
+</div>
+
 <script>
     function openTab(evt, tabName) {
         var i, tabcontent, tablinks;
@@ -142,15 +169,39 @@
         document.querySelector(".tablinks").click();
     });
 
+    // AJAX for Global Chat
+    document.getElementById("global-chat-form").addEventListener("submit", function(event) {
+        event.preventDefault();
+        var formData = new FormData(event.target);
+        fetch('/global_chat', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById("global-messages").innerHTML = data.messagesHtml;
+        });
+        event.target.reset();
+    });
+
+    // Periodically fetch new messages
+    setInterval(() => {
+        fetch('/global_chat')
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById("global-messages").innerHTML = data.messagesHtml;
+        });
+    }, 2000); // Fetch new messages every 2 seconds
+
     // Three.js code
     document.addEventListener("DOMContentLoaded", function() {
         var scene = new THREE.Scene();
-        var camera = new THREE.PerspectiveCamera(75, document.getElementById('threejs-container').clientWidth / 400, 0.1, 1000);
+        var camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         var renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setSize(document.getElementById('threejs-container').clientWidth, 400);
+        renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setClearColor(0xffffff);
 
-        document.getElementById('threejs-container').appendChild(renderer.domElement);
+        document.getElementById("board-canvas").appendChild(renderer.domElement);
 
         var controls = new THREE.OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
