@@ -227,49 +227,66 @@
         var differentLayerMaterialRed = new THREE.MeshBasicMaterial({ color: 0xff0000, opacity: 0.3, transparent: true }); // Transparent red for vertical layer
         var differentLayerMaterialBlue = new THREE.MeshBasicMaterial({ color: 0x0000ff, opacity: 0.3, transparent: true }); // Transparent blue for horizontal layer
 
-        var board = {{ board|tojson|safe }};  // Assumes 'board' is a 3D list passed from Flask
-
         var spacing = 1.2;  // Spacing between cubes
 
-        // Highlight vertical layer with a thin box (Red)
-        var verticalLayerToHighlight = 1; // Change to the layer index you want to highlight
+        function updateBoardState(board) {
+            // Clear previous objects
+            while (scene.children.length > 0) { 
+                scene.remove(scene.children[0]); 
+            }
 
-        var boxThickness = 0.1; // Thickness of the highlighted layer box
-        var verticalLayerBoxGeometry = new THREE.BoxGeometry(board[0][0].length * spacing, board.length * spacing, boxThickness);
-        var verticalLayerBox = new THREE.Mesh(verticalLayerBoxGeometry, differentLayerMaterialRed);
-        verticalLayerBox.position.set((board[0][0].length - 1) * spacing / 2, (board.length - 1) * spacing / 2, verticalLayerToHighlight * spacing);
-        scene.add(verticalLayerBox);
+            // Add lights and grid helper again
+            scene.add(ambientLight);
+            scene.add(directionalLight);
+            scene.add(gridHelper);
 
-        // Highlight horizontal layer with a thin box (Blue)
-        var horizontalLayerToHighlight = 1; // Change to the layer index you want to highlight
-        var horizontalLayerBoxGeometry = new THREE.BoxGeometry(board[0][0].length * spacing, boxThickness, board[0].length * spacing);
-        var horizontalLayerBox = new THREE.Mesh(horizontalLayerBoxGeometry, differentLayerMaterialBlue);
-        horizontalLayerBox.position.set((board[0][0].length - 1) * spacing / 2, horizontalLayerToHighlight * spacing, (board[0].length - 1) * spacing / 2);
-        scene.add(horizontalLayerBox);
+            // Highlight vertical layer with a thin box (Red)
+            var verticalLayerToHighlight = 1; // Change to the layer index you want to highlight
+            var boxThickness = 0.1; // Thickness of the highlighted layer box
+            var verticalLayerBoxGeometry = new THREE.BoxGeometry(board[0][0].length * spacing, board.length * spacing, boxThickness);
+            var verticalLayerBox = new THREE.Mesh(verticalLayerBoxGeometry, differentLayerMaterialRed);
+            verticalLayerBox.position.set((board[0][0].length - 1) * spacing / 2, (board.length - 1) * spacing / 2, verticalLayerToHighlight * spacing);
+            scene.add(verticalLayerBox);
 
-        // Create grid lines for empty cells
-        var gridLineMaterial = new THREE.LineBasicMaterial({ color: 0x000000 });
-        for (var z = 0; z < board.length; z++) {
-            for (var y = 0; y < board[z].length; y++) {
-                for (var x = 0; x < board[z][y].length; x++) {
-                    // Create a cube outline for the grid
-                    var cubeGeometry = new THREE.BoxGeometry(1, 1, 1);
-                    var edges = new THREE.EdgesGeometry(cubeGeometry);
-                    var line = new THREE.LineSegments(edges, gridLineMaterial);
-                    line.position.set(x * spacing, y * spacing, z * spacing);
-                    scene.add(line);
+            // Highlight horizontal layer with a thin box (Blue)
+            var horizontalLayerToHighlight = 1; // Change to the layer index you want to highlight
+            var horizontalLayerBoxGeometry = new THREE.BoxGeometry(board[0][0].length * spacing, boxThickness, board[0].length * spacing);
+            var horizontalLayerBox = new THREE.Mesh(horizontalLayerBoxGeometry, differentLayerMaterialBlue);
+            horizontalLayerBox.position.set((board[0][0].length - 1) * spacing / 2, horizontalLayerToHighlight * spacing, (board[0].length - 1) * spacing / 2);
+            scene.add(horizontalLayerBox);
 
-                    // Add actual X and O cubes
-                    if (board[z][y][x] !== null) {
-                        var material = materials[board[z][y][x]];  // Select material based on board value
+            // Create grid lines for empty cells
+            var gridLineMaterial = new THREE.LineBasicMaterial({ color: 0x000000 });
+            for (var z = 0; z < board.length; z++) {
+                for (var y = 0; y < board[z].length; y++) {
+                    for (var x = 0; x < board[z][y].length; x++) {
+                        // Create a cube outline for the grid
+                        var cubeGeometry = new THREE.BoxGeometry(1, 1, 1);
+                        var edges = new THREE.EdgesGeometry(cubeGeometry);
+                        var line = new THREE.LineSegments(edges, gridLineMaterial);
+                        line.position.set(x * spacing, y * spacing, z * spacing);
+                        scene.add(line);
 
-                        var cube = new THREE.Mesh(cubeGeometry, material);
-                        cube.position.set(x * spacing, y * spacing, z * spacing);
-                        scene.add(cube);
+                        // Add actual X and O cubes
+                        if (board[z][y][x] !== null) {
+                            var material = materials[board[z][y][x] === 'X' ? 0 : 1];  // Select material based on board value
+                            var cube = new THREE.Mesh(cubeGeometry, material);
+                            cube.position.set(x * spacing, y * spacing, z * spacing);
+                            scene.add(cube);
+                        }
                     }
                 }
             }
         }
+
+        // Fetch the updated board state periodically and update the 3D board
+        setInterval(() => {
+            fetch('/board_state')
+                .then(response => response.json())
+                .then(data => {
+                    updateBoardState(data);
+                });
+        }, 2000); // Fetch updated board state every 2 seconds
 
         camera.position.z = 10;
 

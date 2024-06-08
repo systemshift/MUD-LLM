@@ -46,6 +46,23 @@
             flex-grow: 1;
             margin-right: 10px;
         }
+        .board {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            grid-template-rows: repeat(3, 1fr);
+            gap: 5px;
+            width: 300px;
+            height: 300px;
+        }
+        .cell {
+            width: 100px;
+            height: 100px;
+            border: 1px solid black;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
     </style>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 </head>
@@ -55,14 +72,12 @@
 
 <div class="container">
     <div class="player-page">
-        <div class="form-container">
-            <form id="move-form" method="POST">
-                <label for="row">Row:</label>
-                <input type="number" id="row" name="row" min="0" max="2"><br>
-                <label for="col">Column:</label>
-                <input type="number" id="col" name="col" min="0" max="2"><br>
-                <input type="submit" value="Make Move">
-            </form>
+        <div class="board" id="board">
+            {% for row in range(3) %}
+                {% for col in range(3) %}
+                    <div class="cell" data-row="{{ row }}" data-col="{{ col }}"></div>
+                {% endfor %}
+            {% endfor %}
         </div>
     </div>
 
@@ -96,12 +111,13 @@
             });
         });
 
-        $('#move-form').submit(function(event) {
-            event.preventDefault();
+        $('.cell').click(function() {
+            var row = $(this).data('row');
+            var col = $(this).data('col');
             $.ajax({
                 type: 'POST',
                 url: '{{ url_for("player1") }}',
-                data: $(this).serialize(),
+                data: { row: row, col: col },
                 success: function(response) {
                     $('#messages').html(response.messagesHtml);
                     $('#messages').scrollTop($('#messages')[0].scrollHeight);

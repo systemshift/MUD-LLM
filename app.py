@@ -21,7 +21,7 @@ def player1():
             row = request.form.get('row')
             col = request.form.get('col')
             if row is not None and col is not None:
-                game.make_move('player1', int(row), int(col))
+                game.make_move('player1', int(row), int(col), 1)
         return jsonify({
             'messagesHtml': render_template('messages.html', messages=chat.group_chat_1)
         })
@@ -36,7 +36,7 @@ def player2():
             row = request.form.get('row')
             col = request.form.get('col')
             if row is not None and col is not None:
-                game.make_move('player2', int(row), int(col))
+                game.make_move('player2', int(row), int(col), 1)
         return jsonify({
             'messagesHtml': render_template('messages.html', messages=chat.group_chat_2)
         })
@@ -52,7 +52,7 @@ def player3():
             row = request.form.get('row')
             col = request.form.get('col')
             if row is not None and col is not None:
-                game.make_move('player3', int(row), int(col))
+                game.make_move('player3', int(row), 1 ,int(col))
         return jsonify({
             'messagesHtml': render_template('messages.html', messages=chat.group_chat_1)
         })
@@ -68,11 +68,16 @@ def player4():
             row = request.form.get('row')
             col = request.form.get('col')
             if row is not None and col is not None:
-                game.make_move('player4', int(row), int(col))
+                game.make_move('player4', int(row),1 , int(col))
         return jsonify({
             'messagesHtml': render_template('messages.html', messages=chat.group_chat_2)
         })
     return render_template('player4.html', messages=chat.group_chat_2, board=game.board)
+
+
+@app.route('/board_state', methods=['GET'])
+def board_state():
+    return jsonify(game.board)
 
 
 @app.route('/global_chat', methods=['GET', 'POST'])
