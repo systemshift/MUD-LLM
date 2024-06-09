@@ -36,16 +36,6 @@
             overflow-y: auto;
             margin-bottom: 10px;
         }
-        .form-container {
-            margin-bottom: 20px;
-        }
-        .chat form {
-            display: flex;
-        }
-        .chat input[type="text"] {
-            flex-grow: 1;
-            margin-right: 10px;
-        }
         .board {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
@@ -75,13 +65,14 @@
         <div class="board" id="board">
             {% for row in range(3) %}
                 {% for col in range(3) %}
-                    <div class="cell" data-row="{{ row }}" data-col="{{ col }}"></div>
+                    <div class="cell" data-row="{{ row }}" data-col="{{ col }}">
+                        {{ board[1][row][col] if board[1][row][col] is not none else '' }}
+                    </div>
                 {% endfor %}
             {% endfor %}
         </div>
     </div>
 
-    <!-- Chat -->
     <div class="chat">
         <div class="messages" id="messages">
             {% for player, message in messages %}
@@ -96,38 +87,43 @@
 </div>
 
 <script>
-    $(document).ready(function() {
-        $('#chat-form').submit(function(event) {
-            event.preventDefault();
-            $.ajax({
-                type: 'POST',
-                url: '{{ url_for("player2") }}',
-                data: $(this).serialize(),
-                success: function(response) {
-                    $('#messages').html(response.messagesHtml);
-                    $('#chat-form')[0].reset();
-                    $('#messages').scrollTop($('#messages')[0].scrollHeight);
-                }
-            });
-        });
-
+$(document).ready(function() {
+    function attachCellClickHandlers() {
         $('.cell').click(function() {
             var row = $(this).data('row');
             var col = $(this).data('col');
+            console.log("Clicked on cell:", col, row); // Swap row and col for debugging
             $.ajax({
                 type: 'POST',
                 url: '{{ url_for("player2") }}',
-                data: { row: row, col: col },
+                data: { row: col, col: row }, // Swap row and col when sending data
                 success: function(response) {
+                    $('#board').html(response.boardHtml);
                     $('#messages').html(response.messagesHtml);
-                    $('#messages').scrollTop($('#messages')[0].scrollHeight);
+                    attachCellClickHandlers(); // Re-attach click handlers after updating the board
                 }
             });
         });
+    }
 
-        // Scroll to the bottom of the messages on page load
-        $('#messages').scrollTop($('#messages')[0].scrollHeight);
+    $('#chat-form').submit(function(event) {
+        event.preventDefault();
+        $.ajax({
+            type: 'POST',
+            url: '{{ url_for("player2") }}',
+            data: $(this).serialize(),
+            success: function(response) {
+                $('#messages').html(response.messagesHtml);
+                $('#chat-form')[0].reset();
+                $('#messages').scrollTop($('#messages')[0].scrollHeight);
+            }
+        });
     });
+
+    attachCellClickHandlers(); // Attach click handlers on page load
+    $('#messages').scrollTop($('#messages')[0].scrollHeight);
+});
+
 </script>
 
 </body>

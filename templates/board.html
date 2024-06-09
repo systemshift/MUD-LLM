@@ -1,0 +1,9 @@
+<div class="board" id="board">
+    {% for row in range(3) %}
+        {% for col in range(3) %}
+            <div class="cell" data-row="{{ row }}" data-col="{{ col }}">
+                {{ board[row][col] if board[row][col] is not none else '' }}
+            </div>
+        {% endfor %}
+    {% endfor %}
+</div>

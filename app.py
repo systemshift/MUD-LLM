@@ -23,9 +23,10 @@ def player1():
             if row is not None and col is not None:
                 game.make_move('player1', int(row), int(col), 1)
         return jsonify({
+            'boardHtml': render_template('board.html', board=game.board[1]),
             'messagesHtml': render_template('messages.html', messages=chat.group_chat_1)
         })
-    return render_template('player1.html', messages=chat.group_chat_1, board=game.board)
+    return render_template('player1.html', messages=chat.group_chat_1, board=game.board[1])
 
 @app.route('/player2', methods=['GET', 'POST'])
 def player2():
@@ -38,9 +39,10 @@ def player2():
             if row is not None and col is not None:
                 game.make_move('player2', int(row), int(col), 1)
         return jsonify({
+            'boardHtml': render_template('board.html', board=game.board[1]),
             'messagesHtml': render_template('messages.html', messages=chat.group_chat_2)
         })
-    return render_template('player2.html', messages=chat.group_chat_2, board=game.board)
+    return render_template('player2.html', messages=chat.group_chat_2, board=game.board[1])
 
 
 @app.route('/player3', methods=['GET', 'POST'])
