@@ -54,12 +54,12 @@ def player3():
             row = request.form.get('row')
             col = request.form.get('col')
             if row is not None and col is not None:
-                game.make_move('player3', int(row), 1 ,int(col))
+                game.make_move('player3', int(col), 1, int(row))
         return jsonify({
+            'boardHtml': render_template('board.html', board=[row[1] for row in game.board]),  # Extract middle layer on the other axis
             'messagesHtml': render_template('messages.html', messages=chat.group_chat_1)
         })
-    return render_template('player3.html', messages=chat.group_chat_1, board=game.board)
-
+    return render_template('player3.html', messages=chat.group_chat_1, board=[row[1] for row in game.board])  # Extract middle layer on the other axis
 
 @app.route('/player4', methods=['GET', 'POST'])
 def player4():
@@ -70,11 +70,12 @@ def player4():
             row = request.form.get('row')
             col = request.form.get('col')
             if row is not None and col is not None:
-                game.make_move('player4', int(row),1 , int(col))
+                game.make_move('player4', int(col), 1, int(row))
         return jsonify({
+            'boardHtml': render_template('board.html', board=[row[1] for row in game.board]),  # Extract middle layer on the other axis
             'messagesHtml': render_template('messages.html', messages=chat.group_chat_2)
         })
-    return render_template('player4.html', messages=chat.group_chat_2, board=game.board)
+    return render_template('player4.html', messages=chat.group_chat_2, board=[row[1] for row in game.board])  # Extract middle layer on the other axis
 
 
 @app.route('/board_state', methods=['GET'])
