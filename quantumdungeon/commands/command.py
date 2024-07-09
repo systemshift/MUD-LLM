@@ -205,12 +205,20 @@ class CmdAttack(Command):
             self.caller.msg("There's no monster here to attack!")
             return
 
+        if monster.db.state == "dead":
+            self.caller.msg("The monster is already dead. You can't attack it.")
+            return
+
+        # Ensure health is initialized
+        if monster.db.health is None:
+            monster.db.health = monster.db.max_health
+
         damage = 10  # For simplicity, let's say each attack does 10 damage
-        monster.db.health -= damage
+        monster.db.health = max(0, monster.db.health - damage)  # Ensure health doesn't go below 0
         self.caller.msg(f"You attack the monster for {damage} damage!")
 
         if monster.db.health <= 0:
             self.caller.msg("You have defeated the monster!")
-            monster.delete()
+            monster.at_defeat()  # Call the at_defeat method
         else:
             self.caller.msg(f"The monster has {monster.db.health} health remaining.")

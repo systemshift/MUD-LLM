@@ -12,6 +12,7 @@ inheritance.
 """
 
 from evennia.objects.objects import DefaultObject
+from evennia import utils
 
 
 class ObjectParent:
@@ -179,4 +180,45 @@ class Monster(DefaultObject):
     def at_object_creation(self):
         super().at_object_creation()
         self.db.desc = "A fearsome monster with glowing red eyes."
-        self.db.health = 50
+        self.db.max_health = 50
+        self.db.health = self.db.max_health
+        self.db.state = "alive"
+        self.db.home = self.search("Dungeon", global_search=True)[0]
+
+    def reset(self):
+        """Reset the monster's health and state, and respawn it in the dungeon."""
+        self.db.health = self.db.max_health
+        self.db.state = "alive"
+        self.db.desc = "A fearsome monster with glowing red eyes."
+        if self.db.home:
+            self.move_to(self.db.home, quiet=True)
+        else:
+            dungeon = self.search("Dungeon", global_search=True)
+            if dungeon:
+                self.move_to(dungeon[0], quiet=True)
+            else:
+                print("Error: Dungeon not found for monster respawn")
+        if self.location:
+            self.location.msg_contents(f"The {self.key} has respawned and looks ready for battle!")
+
+    def at_defeat(self):
+        """Called when the monster is defeated."""
+        self.db.state = "dead"
+        self.db.health = 0
+        self.db.desc = f"The lifeless body of the {self.key} lies here."
+        self.location.msg_contents(f"The {self.key} has been defeated!")
+        utils.delay(60, self.reset)  # Reset after 60 seconds
+
+    def return_appearance(self, looker):
+        """Customize the appearance of the monster based on its state"""
+        if self.db.state == "alive":
+            return f"A fearsome {self.key} with glowing red eyes. It has {self.db.health}/{self.db.max_health} health."
+        else:
+            return self.db.desc
+
+    def get_display_name(self, looker, **kwargs):
+        """Customize how the monster's name is displayed in room descriptions"""
+        if self.db.state == "alive":
+            return f"{self.name} (Alive)"
+        else:
+            return f"{self.name} (Dead)"

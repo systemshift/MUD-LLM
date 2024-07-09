@@ -27,3 +27,29 @@ class DungeonRoom(DefaultRoom):
     def at_object_creation(self):
         super().at_object_creation()
         self.db.desc = "You are in a dark, damp dungeon room. A fearsome monster lurks in the shadows."
+
+    def return_appearance(self, looker):
+        """
+        This is called when someone looks at the room.
+        """
+        # Get the parent class's appearance string
+        appearance = super().return_appearance(looker)
+        
+        # Split the appearance into lines
+        lines = appearance.split("\n")
+        
+        # Find the line that starts with "You see:" and modify it
+        for i, line in enumerate(lines):
+            if line.startswith("You see:"):
+                # Get all contents of the room
+                contents = self.contents_get(exclude=looker)
+                # Use the get_display_name method for each object
+                content_names = [obj.get_display_name(looker) for obj in contents]
+                # Join the names into a string
+                content_string = ", ".join(content_names)
+                # Replace the line
+                lines[i] = f"You see: {content_string}"
+                break
+        
+        # Join the lines back into a single string
+        return "\n".join(lines)
