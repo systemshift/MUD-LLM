@@ -183,19 +183,21 @@ class Monster(DefaultObject):
         self.db.max_health = 50
         self.db.health = self.db.max_health
         self.db.state = "alive"
-        self.db.home = self.search("Dungeon", global_search=True)[0]
+        # Set home to the current location instead of searching for "Dungeon"
+        self.home = self.location
 
     def reset(self):
         """Reset the monster's health and state, and respawn it in the dungeon."""
         self.db.health = self.db.max_health
         self.db.state = "alive"
         self.db.desc = "A fearsome monster with glowing red eyes."
-        if self.db.home:
-            self.move_to(self.db.home, quiet=True)
+        if self.home:
+            self.move_to(self.home, quiet=True)
         else:
             dungeon = self.search("Dungeon", global_search=True)
             if dungeon:
                 self.move_to(dungeon[0], quiet=True)
+                self.home = dungeon[0]  # Update home to the found Dungeon
             else:
                 print("Error: Dungeon not found for monster respawn")
         if self.location:
@@ -222,3 +224,8 @@ class Monster(DefaultObject):
             return f"{self.name} (Alive)"
         else:
             return f"{self.name} (Dead)"
+
+    def at_init(self):
+        """Called when the object is cached from the database"""
+        if not self.location:
+            self.reset()  # If the monster somehow loses its location, reset it

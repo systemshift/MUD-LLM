@@ -35,6 +35,7 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         #
         # any commands you add below will overload the default ones.
         #
+        self.add(command.CmdStartGame())
 
 
 class AccountCmdSet(default_cmds.AccountCmdSet):
@@ -95,9 +96,3 @@ class SessionCmdSet(default_cmds.SessionCmdSet):
         #
         # any commands you add below will overload the default ones.
         #
-
-
-class CharacterCmdSet(default_cmds.CharacterCmdSet):
-    def at_cmdset_creation(self):
-        super().at_cmdset_creation()
-        self.add(command.CmdAttack())

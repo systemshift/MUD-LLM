@@ -6,6 +6,10 @@ Commands describe the input the account can do to the game.
 """
 
 from evennia.commands.command import Command as BaseCommand
+from evennia import create_object
+from typeclasses.rooms import Room
+from typeclasses.objects import Monster
+from typeclasses.exits import Exit
 
 # from evennia import default_cmds
 
@@ -222,3 +226,44 @@ class CmdAttack(Command):
             monster.at_defeat()  # Call the at_defeat method
         else:
             self.caller.msg(f"The monster has {monster.db.health} health remaining.")
+
+
+class CmdStartGame(Command):
+    """
+    Start a new game or reset your current game.
+
+    Usage:
+      startgame
+
+    This will set up the game world and teleport you to the Dungeon.
+    """
+    key = "startgame"
+    locks = "cmd:all()"
+
+    def func(self):
+        # Find or create the Dungeon
+        dungeon = self.caller.search("Dungeon")
+        if not dungeon:
+            dungeon = create_object(Room, key="Dungeon")
+            dungeon.db.desc = "A dark, damp dungeon. Danger lurks in the shadows."
+
+        # Create or reset the Monster
+        monster = dungeon.search("Monster")
+        if not monster:
+            monster = create_object(Monster, key="Monster", location=dungeon)
+        else:
+            monster = monster[0]
+            monster.db.health = monster.db.max_health  # Reset monster health
+
+        # Ensure there's an entrance from Limbo to the Dungeon
+        limbo = self.caller.search("Limbo")
+        if limbo:
+            entrance = limbo.search("Dungeon Entrance")
+            if not entrance:
+                create_object(Exit, key="Dungeon Entrance", location=limbo, destination=dungeon)
+
+        # Move the player to the Dungeon
+        self.caller.move_to(dungeon, quiet=True)
+
+        self.caller.msg("You find yourself in a dark dungeon. A fearsome monster lurks nearby!")
+        self.caller.msg(dungeon.return_appearance(self.caller))
