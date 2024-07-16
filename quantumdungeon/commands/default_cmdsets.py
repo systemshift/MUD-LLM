@@ -58,6 +58,8 @@ class AccountCmdSet(default_cmds.AccountCmdSet):
         #
         # any commands you add below will overload the default ones.
         #
+        self.add(command.CmdStartGame())
+        self.add(command.CmdResetGame())
 
 
 class UnloggedinCmdSet(default_cmds.UnloggedinCmdSet):
