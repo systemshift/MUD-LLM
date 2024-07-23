@@ -34,6 +34,18 @@ from evennia.settings_default import *
 # This is the name of your game. Make it catchy!
 SERVERNAME = "quantumdungeon"
 
+######################################################################
+# Settings for Multi-Session Mode
+######################################################################
+# Allow multiple sessions per player; each session can puppet a different
+# character; 2 is the mode for allowing multiple simultaneous characters
+MULTISESSION_MODE = 2
+
+# Optional: Increase the maximum number of sessions per account
+MAX_NR_SIMULTANEOUS_LOGINS = 4  # Adjust this number as needed
+
+# Optional: Limit the number of characters an account can create
+MAX_NR_CHARACTERS = 4  # Adjust as desired
 
 ######################################################################
 # Settings given in secret_settings.py override those in this file.
