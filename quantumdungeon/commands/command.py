@@ -12,6 +12,7 @@ from typeclasses.objects import Monster
 from typeclasses.exits import Exit
 from evennia.utils.create import create_object
 from evennia.objects.models import ObjectDB
+from evennia.accounts.models import AccountDB
 
 # from evennia import default_cmds
 
@@ -68,12 +69,12 @@ class CmdAttack(Command):
 
 class CmdStartGame(Command):
     """
-    Start a new game or reset your current game.
+    Start a new game for all players.
 
     Usage:
       startgame
 
-    This will set up the game world with Limbo and a Dungeon entrance.
+    This will set up the game world with Limbo and a Dungeon entrance for all players.
     """
     key = "startgame"
     locks = "cmd:all()"
@@ -113,38 +114,34 @@ class CmdStartGame(Command):
         if not exit_to_limbo:
             create_object(Exit, key="Exit to Limbo", location=dungeon, destination=limbo)
 
-        # Handle both Account and Character scenarios
-        if hasattr(self.caller, 'character'):
-            # If caller is an Account, move their character
-            character = self.caller.character
-            if character:
-                character.move_to(limbo, quiet=True)
-                self.caller.msg(f"Game started! {character.key} is now in Limbo. There's a dungeon entrance nearby.")
-                self.caller.msg(limbo.return_appearance(character))
-            else:
-                self.caller.msg("Game world set up. Create a character with 'charcreate' to start playing.")
-        else:
-            # If caller is a Character, move them directly
-            self.caller.move_to(limbo, quiet=True)
-            self.caller.msg("Game started! You find yourself in Limbo. There's a dungeon entrance nearby.")
-            self.caller.msg(limbo.return_appearance(self.caller))
+        # Move all players to Limbo
+        for account in AccountDB.objects.all():
+            for session in account.sessions.all():
+                character = session.get_puppet()
+                if character:
+                    character.move_to(limbo, quiet=True)
+                    character.msg("Game started! You find yourself in Limbo. There's a dungeon entrance nearby.")
+                    character.msg(limbo.return_appearance(character))
+                else:
+                    account.msg("Game world set up. Create a character with 'charcreate' to start playing.")
+
+        self.caller.msg("Game started for all players!")
 
     def remove_all_monsters(self, rooms):
         for room in rooms:
             monsters = [obj for obj in room.contents if isinstance(obj, Monster)]
             for monster in monsters:
-                self.caller.msg(f"Removing monster {monster.key} from {room.key}")
                 monster.delete()
 
 
 class CmdResetGame(Command):
     """
-    Reset the game to its initial state.
+    Reset the game to its initial state for all players.
 
     Usage:
       resetgame
 
-    This will reset the game world, including monster health and player position.
+    This will reset the game world, including monster health and all player positions.
     """
     key = "resetgame"
     locks = "cmd:all()"
@@ -171,25 +168,21 @@ class CmdResetGame(Command):
         monster = create_object(Monster, key="Monster", location=dungeon)
         monster.db.health = monster.db.max_health
         monster.db.state = "alive"
-        self.caller.msg(f"Created new monster in {dungeon.key}")
 
-        # Handle both Account and Character scenarios
-        if hasattr(self.caller, 'character'):
-            # If caller is an Account, move their character
-            character = self.caller.character
-            if character:
-                character.move_to(limbo, quiet=True)
-                self.caller.msg(f"Game reset! {character.key} is now back in Limbo. The dungeon awaits!")
-            else:
-                self.caller.msg("Game world reset. Create a character with 'charcreate' to start playing.")
-        else:
-            # If caller is a Character, move them directly
-            self.caller.move_to(limbo, quiet=True)
-            self.caller.msg("Game reset! You find yourself back in Limbo. The dungeon awaits!")
+        # Move all players to Limbo
+        for account in AccountDB.objects.all():
+            for session in account.sessions.all():
+                character = session.get_puppet()
+                if character:
+                    character.move_to(limbo, quiet=True)
+                    character.msg("Game reset! You find yourself back in Limbo. The dungeon awaits!")
+                else:
+                    account.msg("Game world reset. Create a character with 'charcreate' to start playing.")
+
+        self.caller.msg("Game reset for all players!")
 
     def remove_all_monsters(self, rooms):
         for room in rooms:
             monsters = [obj for obj in room.contents if isinstance(obj, Monster)]
             for monster in monsters:
-                self.caller.msg(f"Removing monster {monster.key} from {room.key}")
                 monster.delete()
