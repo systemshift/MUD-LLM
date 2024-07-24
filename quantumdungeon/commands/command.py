@@ -74,7 +74,7 @@ class CmdStartGame(Command):
     Usage:
       startgame
 
-    This will set up the game world with Limbo and a Dungeon entrance for all players.
+    This will set up the game world with Limbo and four Dungeon entrances for all players.
     """
     key = "startgame"
     locks = "cmd:all()"
@@ -84,35 +84,41 @@ class CmdStartGame(Command):
         limbo = search_object("Limbo", exact=True)
         if not limbo:
             limbo = create_object(Room, key="Limbo")
-            limbo.db.desc = "A featureless void. There's a mysterious dungeon entrance here."
+            limbo.db.desc = "A featureless void. There are four mysterious dungeon entrances here."
         else:
             limbo = limbo[0]
 
-        # Find or create the Dungeon
-        dungeon = search_object("Dungeon", exact=True)
-        if not dungeon:
-            dungeon = create_object(Room, key="Dungeon")
-            dungeon.db.desc = "A dark, damp dungeon. Danger lurks in the shadows."
-        else:
-            dungeon = dungeon[0]
+        # Create or update four dungeons
+        dungeons = []
+        for i in range(1, 5):
+            dungeon = search_object(f"Dungeon {i}", exact=True)
+            if not dungeon:
+                dungeon = create_object(Room, key=f"Dungeon {i}")
+            else:
+                dungeon = dungeon[0]
+            dungeon.db.desc = f"A dark, damp dungeon. Danger lurks in the shadows. This is Dungeon {i}."
+            dungeons.append(dungeon)
 
-        # Remove any existing monsters from both Limbo and Dungeon
-        self.remove_all_monsters([limbo, dungeon])
+        # Remove any existing monsters from Limbo and all Dungeons
+        self.remove_all_monsters([limbo] + dungeons)
 
-        # Create a new Monster in the Dungeon
-        monster = create_object(Monster, key="Monster", location=dungeon)
-        monster.db.health = monster.db.max_health
-        monster.db.state = "alive"
+        # Create a new Monster in each Dungeon
+        for i, dungeon in enumerate(dungeons, 1):
+            monster = create_object(Monster, key=f"Monster {i}", location=dungeon)
+            monster.db.health = monster.db.max_health
+            monster.db.state = "alive"
 
-        # Ensure there's an entrance from Limbo to the Dungeon
-        entrance = limbo.search("Dungeon Entrance")
-        if not entrance:
-            create_object(Exit, key="Dungeon Entrance", location=limbo, destination=dungeon)
+        # Ensure there's an entrance from Limbo to each Dungeon
+        for i, dungeon in enumerate(dungeons, 1):
+            entrance = limbo.search(f"Dungeon {i} Entrance")
+            if not entrance:
+                create_object(Exit, key=f"Dungeon {i} Entrance", location=limbo, destination=dungeon)
 
-        # Ensure there's an exit from Dungeon to Limbo
-        exit_to_limbo = dungeon.search("Exit to Limbo")
-        if not exit_to_limbo:
-            create_object(Exit, key="Exit to Limbo", location=dungeon, destination=limbo)
+        # Ensure there's an exit from each Dungeon to Limbo
+        for i, dungeon in enumerate(dungeons, 1):
+            exit_to_limbo = dungeon.search("Exit to Limbo")
+            if not exit_to_limbo:
+                create_object(Exit, key="Exit to Limbo", location=dungeon, destination=limbo)
 
         # Move all players to Limbo
         for account in AccountDB.objects.all():
@@ -120,7 +126,7 @@ class CmdStartGame(Command):
                 character = session.get_puppet()
                 if character:
                     character.move_to(limbo, quiet=True)
-                    character.msg("Game started! You find yourself in Limbo. There's a dungeon entrance nearby.")
+                    character.msg("Game started! You find yourself in Limbo. There are four dungeon entrances nearby.")
                     character.msg(limbo.return_appearance(character))
                 else:
                     account.msg("Game world set up. Create a character with 'charcreate' to start playing.")
@@ -154,20 +160,23 @@ class CmdResetGame(Command):
             return
         limbo = limbo[0]
 
-        # Find the Dungeon
-        dungeon = search_object("Dungeon", exact=True)
-        if not dungeon:
-            self.caller.msg("Error: Dungeon not found. Please use 'startgame' to create a new game.")
-            return
-        dungeon = dungeon[0]
+        # Find the Dungeons
+        dungeons = []
+        for i in range(1, 5):
+            dungeon = search_object(f"Dungeon {i}", exact=True)
+            if not dungeon:
+                self.caller.msg(f"Error: Dungeon {i} not found. Please use 'startgame' to create a new game.")
+                return
+            dungeons.append(dungeon[0])
 
-        # Remove any existing monsters from both Limbo and Dungeon
-        self.remove_all_monsters([limbo, dungeon])
+        # Remove any existing monsters from Limbo and all Dungeons
+        self.remove_all_monsters([limbo] + dungeons)
 
-        # Create a new Monster in the Dungeon
-        monster = create_object(Monster, key="Monster", location=dungeon)
-        monster.db.health = monster.db.max_health
-        monster.db.state = "alive"
+        # Create a new Monster in each Dungeon
+        for i, dungeon in enumerate(dungeons, 1):
+            monster = create_object(Monster, key=f"Monster {i}", location=dungeon)
+            monster.db.health = monster.db.max_health
+            monster.db.state = "alive"
 
         # Move all players to Limbo
         for account in AccountDB.objects.all():
@@ -175,7 +184,7 @@ class CmdResetGame(Command):
                 character = session.get_puppet()
                 if character:
                     character.move_to(limbo, quiet=True)
-                    character.msg("Game reset! You find yourself back in Limbo. The dungeon awaits!")
+                    character.msg("Game reset! You find yourself back in Limbo. Four dungeons await!")
                 else:
                     account.msg("Game world reset. Create a character with 'charcreate' to start playing.")
 
