@@ -8,11 +8,12 @@ Commands describe the input the account can do to the game.
 from evennia.commands.command import Command as BaseCommand
 from evennia import create_object, search_object
 from typeclasses.rooms import Room
-from typeclasses.objects import Monster
+from typeclasses.objects import Monster, get_or_create_shared_monster
 from typeclasses.exits import Exit
 from evennia.utils.create import create_object
 from evennia.objects.models import ObjectDB
 from evennia.accounts.models import AccountDB
+from evennia import logger
 
 # from evennia import default_cmds
 
@@ -57,7 +58,7 @@ class CmdAttack(Command):
             monster.db.health = monster.db.max_health
 
         damage = 10  # For simplicity, let's say each attack does 10 damage
-        monster.db.health = max(0, monster.db.health - damage)  # Ensure health doesn't go below 0
+        monster.at_damage(damage)  # Use the at_damage method to handle shared state
         self.caller.msg(f"You attack the monster for {damage} damage!")
 
         if monster.db.health <= 0:
@@ -99,14 +100,17 @@ class CmdStartGame(Command):
             dungeon.db.desc = f"A dark, damp dungeon. Danger lurks in the shadows. This is Dungeon {i}."
             dungeons.append(dungeon)
 
-        # Remove any existing monsters from Limbo and all Dungeons
-        self.remove_all_monsters([limbo] + dungeons)
+        # Get or create the shared monster
+        shared_monster = get_or_create_shared_monster()
+        shared_monster.reset()  # Reset the shared monster to its initial state
+        logger.log_info(f"Shared monster created/retrieved: {shared_monster.key}")
 
-        # Create a new Monster in each Dungeon
+        # Create a Monster instance in each Dungeon that refers to the shared monster
         for i, dungeon in enumerate(dungeons, 1):
             monster = create_object(Monster, key=f"Monster {i}", location=dungeon)
-            monster.db.health = monster.db.max_health
-            monster.db.state = "alive"
+            monster.db.shared_monster = shared_monster
+            monster.sync_with_shared()
+            logger.log_info(f"Created monster instance in Dungeon {i}: {monster.key}")
 
         # Ensure there's an entrance from Limbo to each Dungeon
         for i, dungeon in enumerate(dungeons, 1):
@@ -132,12 +136,7 @@ class CmdStartGame(Command):
                     account.msg("Game world set up. Create a character with 'charcreate' to start playing.")
 
         self.caller.msg("Game started for all players!")
-
-    def remove_all_monsters(self, rooms):
-        for room in rooms:
-            monsters = [obj for obj in room.contents if isinstance(obj, Monster)]
-            for monster in monsters:
-                monster.delete()
+        logger.log_info("Game started successfully")
 
 
 class CmdResetGame(Command):
@@ -169,14 +168,17 @@ class CmdResetGame(Command):
                 return
             dungeons.append(dungeon[0])
 
-        # Remove any existing monsters from Limbo and all Dungeons
-        self.remove_all_monsters([limbo] + dungeons)
+        # Reset the shared monster
+        shared_monster = get_or_create_shared_monster()
+        shared_monster.reset()
+        logger.log_info(f"Shared monster reset: {shared_monster.key}")
 
-        # Create a new Monster in each Dungeon
-        for i, dungeon in enumerate(dungeons, 1):
-            monster = create_object(Monster, key=f"Monster {i}", location=dungeon)
-            monster.db.health = monster.db.max_health
-            monster.db.state = "alive"
+        # Sync all monster instances with the shared monster
+        for dungeon in dungeons:
+            monsters = [obj for obj in dungeon.contents if isinstance(obj, Monster)]
+            for monster in monsters:
+                monster.sync_with_shared()
+                logger.log_info(f"Monster instance synced in {dungeon.key}: {monster.key}")
 
         # Move all players to Limbo
         for account in AccountDB.objects.all():
@@ -189,9 +191,4 @@ class CmdResetGame(Command):
                     account.msg("Game world reset. Create a character with 'charcreate' to start playing.")
 
         self.caller.msg("Game reset for all players!")
-
-    def remove_all_monsters(self, rooms):
-        for room in rooms:
-            monsters = [obj for obj in room.contents if isinstance(obj, Monster)]
-            for monster in monsters:
-                monster.delete()
+        logger.log_info("Game reset successfully")

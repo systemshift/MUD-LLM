@@ -13,7 +13,10 @@ inheritance.
 
 from evennia.objects.objects import DefaultObject
 from evennia import utils
-
+from evennia.utils.utils import class_from_module
+from evennia.utils.create import create_object
+import time
+from evennia import logger
 
 class ObjectParent:
     """
@@ -176,40 +179,103 @@ class Object(ObjectParent, DefaultObject):
     pass
 
 
-class Monster(DefaultObject):
+class SharedMonster(DefaultObject):
+    """
+    A shared monster object that maintains its state across all dungeons.
+    """
     def at_object_creation(self):
-        super().at_object_creation()
+        """Set up the shared monster attributes."""
         self.db.desc = "A fearsome monster with glowing red eyes."
         self.db.max_health = 50
         self.db.health = self.db.max_health
         self.db.state = "alive"
-        # Set home to the current location instead of searching for "Dungeon"
-        self.home = self.location
+        self.db.last_reset = time.time()
+        self.db.instances = []
+        logger.log_info(f"SharedMonster created with key {self.key}")
 
     def reset(self):
-        """Reset the monster's health and state, and respawn it in the dungeon."""
+        """Reset the shared monster's health and state."""
         self.db.health = self.db.max_health
         self.db.state = "alive"
         self.db.desc = "A fearsome monster with glowing red eyes."
-        if self.home:
-            self.move_to(self.home, quiet=True)
-        else:
-            dungeon = self.search("Dungeon", global_search=True)
-            if dungeon:
-                self.move_to(dungeon[0], quiet=True)
-                self.home = dungeon[0]  # Update home to the found Dungeon
-            else:
-                print("Error: Dungeon not found for monster respawn")
-        if self.location:
-            self.location.msg_contents(f"The {self.key} has respawned and looks ready for battle!")
+        self.db.last_reset = time.time()
+        self.update_all_instances()
+        logger.log_info(f"SharedMonster {self.key} reset. Instances: {len(self.db.instances)}")
 
     def at_defeat(self):
-        """Called when the monster is defeated."""
+        """Called when the shared monster is defeated."""
         self.db.state = "dead"
         self.db.health = 0
         self.db.desc = f"The lifeless body of the {self.key} lies here."
-        self.location.msg_contents(f"The {self.key} has been defeated!")
+        self.update_all_instances()
         utils.delay(60, self.reset)  # Reset after 60 seconds
+        logger.log_info(f"SharedMonster {self.key} defeated. Instances: {len(self.db.instances)}")
+
+    def update_all_instances(self):
+        """Update all instances of this monster in all dungeons."""
+        logger.log_info(f"Updating all instances of SharedMonster {self.key}. Instances: {len(self.db.instances)}")
+        for monster in self.db.instances:
+            monster.sync_with_shared()
+
+    def at_damage(self, damage):
+        """Handle damage to the monster."""
+        self.db.health = max(0, self.db.health - damage)
+        logger.log_info(f"SharedMonster {self.key} took {damage} damage. Health: {self.db.health}/{self.db.max_health}")
+        if self.db.health <= 0:
+            self.at_defeat()
+        else:
+            self.update_all_instances()
+
+    def add_instance(self, instance):
+        """Add a new instance to the list of instances."""
+        if instance not in self.db.instances:
+            self.db.instances.append(instance)
+            logger.log_info(f"Added new instance to SharedMonster {self.key}. Total instances: {len(self.db.instances)}")
+
+class Monster(DefaultObject):
+    """
+    A monster instance that represents the shared monster in a specific dungeon.
+    """
+    def at_object_creation(self):
+        """Set up the monster instance."""
+        shared_monster = get_or_create_shared_monster()
+        self.db.shared_monster = shared_monster
+        shared_monster.add_instance(self)
+        self.sync_with_shared()
+        logger.log_info(f"Monster instance created: {self.key}")
+
+    def sync_with_shared(self):
+        """Synchronize this instance with the shared monster state."""
+        shared = self.db.shared_monster
+        if shared:
+            self.db.health = shared.db.health
+            self.db.max_health = shared.db.max_health
+            self.db.state = shared.db.state
+            self.db.desc = shared.db.desc
+            logger.log_info(f"Monster instance {self.key} synced with SharedMonster")
+        else:
+            logger.log_error(f"Monster instance {self.key} failed to sync: shared_monster is None")
+
+    def at_damage(self, damage):
+        """Forward damage to the shared monster."""
+        if self.db.shared_monster:
+            self.db.shared_monster.at_damage(damage)
+        else:
+            logger.log_error(f"Monster instance {self.key} failed to forward damage: shared_monster is None")
+
+    def at_defeat(self):
+        """Called when the monster is defeated in this dungeon."""
+        if self.location:
+            self.location.msg_contents(f"The {self.key} has been defeated!")
+        logger.log_info(f"Monster instance {self.key} defeated")
+
+    def reset(self):
+        """Reset the monster in this dungeon."""
+        if self.db.shared_monster:
+            self.db.shared_monster.reset()
+        if self.location:
+            self.location.msg_contents(f"The {self.key} has respawned and looks ready for battle!")
+        logger.log_info(f"Monster instance {self.key} reset")
 
     def return_appearance(self, looker):
         """Customize the appearance of the monster based on its state"""
@@ -225,7 +291,13 @@ class Monster(DefaultObject):
         else:
             return f"{self.name} (Dead)"
 
-    def at_init(self):
-        """Called when the object is cached from the database"""
-        if not self.location:
-            self.reset()  # If the monster somehow loses its location, reset it
+def get_or_create_shared_monster():
+    """Get the shared monster object or create it if it doesn't exist."""
+    SHARED_MONSTER_KEY = "THE_SHARED_MONSTER"
+    shared_monster = SharedMonster.objects.filter(db_key=SHARED_MONSTER_KEY).first()
+    if not shared_monster:
+        shared_monster = create_object(SharedMonster, key=SHARED_MONSTER_KEY)
+        logger.log_info(f"Created new SharedMonster with key {SHARED_MONSTER_KEY}")
+    else:
+        logger.log_info(f"Retrieved existing SharedMonster with key {SHARED_MONSTER_KEY}")
+    return shared_monster

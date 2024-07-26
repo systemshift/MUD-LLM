@@ -59,7 +59,7 @@ See the `spawn` command and `evennia.prototypes.spawner.spawn` for more info.
 # "health": lambda: randint(20,30),
 # "resists": ["cold", "poison"],
 # "attacks": ["fists"],
-# "weaknesses": ["fire", "light"],
+# "weaknesses": ["fire", "light"]
 # "tags": = [("greenskin", "monster"), ("humanoid", "monster")]
 # }
 #
@@ -88,3 +88,14 @@ See the `spawn` command and `evennia.prototypes.spawner.spawn` for more info.
 # "key": "goblin archwizard",
 # "prototype_parent" : ("GOBLIN_WIZARD", "ARCHWIZARD_MIXIN")
 # }
+
+# Shared Monster prototype
+MONSTER = {
+    "key": "Monster",
+    "typeclass": "typeclasses.objects.Monster",
+    "desc": "A fearsome monster with glowing red eyes.",
+    "attrs": [
+        ("shared_monster", "typeclasses.objects.SharedMonster"),
+    ],
+    "tags": [("monster", "mob")],
+}
