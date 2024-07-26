@@ -57,7 +57,7 @@ class CmdAttack(Command):
         if monster.db.health is None:
             monster.db.health = monster.db.max_health
 
-        damage = 10  # For simplicity, let's say each attack does 10 damage
+        damage = 1  # Each attack now does 1 damage
         monster.at_damage(damage)  # Use the at_damage method to handle shared state
         self.caller.msg(f"You attack the monster for {damage} damage!")
 

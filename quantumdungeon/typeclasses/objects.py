@@ -186,7 +186,7 @@ class SharedMonster(DefaultObject):
     def at_object_creation(self):
         """Set up the shared monster attributes."""
         self.db.desc = "A fearsome monster with glowing red eyes."
-        self.db.max_health = 50
+        self.db.max_health = 1000
         self.db.health = self.db.max_health
         self.db.state = "alive"
         self.db.last_reset = time.time()
