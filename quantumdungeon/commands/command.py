@@ -8,7 +8,7 @@ Commands describe the input the account can do to the game.
 from evennia.commands.command import Command as BaseCommand
 from evennia import create_object, search_object
 from typeclasses.rooms import Room
-from typeclasses.objects import Monster, get_or_create_shared_monster
+from typeclasses.objects import Monster, get_or_create_shared_monster, create_monster_in_room
 from typeclasses.exits import Exit
 from evennia.utils.create import create_object
 from evennia.objects.models import ObjectDB
@@ -105,12 +105,19 @@ class CmdStartGame(Command):
         shared_monster.reset()  # Reset the shared monster to its initial state
         logger.log_info(f"Shared monster created/retrieved: {shared_monster.key}")
 
+        # Remove any existing monster instances
+        for dungeon in dungeons:
+            monsters = [obj for obj in dungeon.contents if isinstance(obj, Monster)]
+            for monster in monsters:
+                monster.delete()
+                logger.log_info(f"Deleted monster instance in {dungeon.key}: {monster.key}")
+
         # Create a Monster instance in each Dungeon that refers to the shared monster
-        for i, dungeon in enumerate(dungeons, 1):
-            monster = create_object(Monster, key=f"Monster {i}", location=dungeon)
+        for dungeon in dungeons:
+            monster = create_monster_in_room(dungeon)
             monster.db.shared_monster = shared_monster
             monster.sync_with_shared()
-            logger.log_info(f"Created monster instance in Dungeon {i}: {monster.key}")
+            logger.log_info(f"Created monster instance in {dungeon.key}: {monster.key}")
 
         # Ensure there's an entrance from Limbo to each Dungeon
         for i, dungeon in enumerate(dungeons, 1):
@@ -173,12 +180,19 @@ class CmdResetGame(Command):
         shared_monster.reset()
         logger.log_info(f"Shared monster reset: {shared_monster.key}")
 
-        # Sync all monster instances with the shared monster
+        # Remove all existing monster instances
         for dungeon in dungeons:
             monsters = [obj for obj in dungeon.contents if isinstance(obj, Monster)]
             for monster in monsters:
-                monster.sync_with_shared()
-                logger.log_info(f"Monster instance synced in {dungeon.key}: {monster.key}")
+                monster.delete()
+                logger.log_info(f"Deleted monster instance in {dungeon.key}: {monster.key}")
+
+        # Create a new monster instance in each Dungeon
+        for dungeon in dungeons:
+            monster = create_monster_in_room(dungeon)
+            monster.db.shared_monster = shared_monster
+            monster.sync_with_shared()
+            logger.log_info(f"Created new monster instance in {dungeon.key}: {monster.key}")
 
         # Move all players to Limbo
         for account in AccountDB.objects.all():
