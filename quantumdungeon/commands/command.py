@@ -14,6 +14,7 @@ from evennia.utils.create import create_object
 from evennia.objects.models import ObjectDB
 from evennia.accounts.models import AccountDB
 from evennia import logger
+import time
 
 # from evennia import default_cmds
 
@@ -64,6 +65,87 @@ class CmdAttack(Command):
         if monster.db.health <= 0:
             self.caller.msg("You have defeated the monster!")
             monster.at_defeat()  # Call the at_defeat method
+        else:
+            self.caller.msg(f"The monster has {monster.db.health} health remaining.")
+
+
+class CmdFireAttack(Command):
+    """
+    Attack the monster with a fire attack.
+
+    Usage:
+      fire
+
+    This will attempt to attack the monster in the room with a fire attack.
+    Fire does 10 damage by default, plus an additional 90 damage for each active ice effect on the monster.
+    """
+    key = "fire"
+    locks = "cmd:all()"
+
+    def func(self):
+        monster = self.caller.search("monster", location=self.caller.location)
+        if not monster:
+            self.caller.msg("There's no monster here to attack!")
+            return
+
+        if monster.db.state == "dead":
+            self.caller.msg("The monster is already dead. You can't attack it.")
+            return
+
+        # Calculate fire damage using the monster's method
+        damage = monster.calculate_fire_damage()
+        active_ice_effects = monster.db.shared_monster.get_active_ice_effects()
+
+        if active_ice_effects > 0:
+            self.caller.msg(f"The fire attack is supercharged by {active_ice_effects} ice effect(s)!")
+
+        monster.at_damage(damage)
+        self.caller.msg(f"You attack the monster with fire for {damage} damage!")
+
+        if monster.db.health <= 0:
+            self.caller.msg("You have defeated the monster!")
+            monster.at_defeat()
+        else:
+            self.caller.msg(f"The monster has {monster.db.health} health remaining.")
+
+
+class CmdIceAttack(Command):
+    """
+    Attack the monster with an ice attack.
+
+    Usage:
+      ice
+
+    This will attempt to attack the monster in the room with an ice attack.
+    Ice does 1 damage and applies a 10-second effect that enhances fire attacks.
+    Multiple ice effects can stack, linearly increasing the power of the next fire attack.
+    """
+    key = "ice"
+    locks = "cmd:all()"
+
+    def func(self):
+        monster = self.caller.search("monster", location=self.caller.location)
+        if not monster:
+            self.caller.msg("There's no monster here to attack!")
+            return
+
+        if monster.db.state == "dead":
+            self.caller.msg("The monster is already dead. You can't attack it.")
+            return
+
+        damage = 1
+        monster.at_damage(damage)
+        self.caller.msg(f"You attack the monster with ice for {damage} damage!")
+
+        # Apply ice effect using the monster's method
+        monster.add_ice_effect()
+        
+        active_ice_effects = monster.db.shared_monster.get_active_ice_effects()
+        self.caller.msg(f"The monster is now affected by {active_ice_effects} ice effect(s)!")
+
+        if monster.db.health <= 0:
+            self.caller.msg("You have defeated the monster!")
+            monster.at_defeat()
         else:
             self.caller.msg(f"The monster has {monster.db.health} health remaining.")
 

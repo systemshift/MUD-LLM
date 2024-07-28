@@ -37,6 +37,8 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         #
         self.add(command.CmdStartGame())
         self.add(command.CmdAttack())
+        self.add(command.CmdFireAttack())
+        self.add(command.CmdIceAttack())
         self.add(command.CmdResetGame())
 
 

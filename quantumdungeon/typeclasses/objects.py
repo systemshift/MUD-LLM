@@ -61,14 +61,16 @@ class SharedMonster(DefaultObject):
         self.db.state = "alive"
         self.db.last_reset = time.time()
         self.db.instances = []
+        self.db.ice_effects = []  # New attribute for ice effects
         logger.log_info(f"SharedMonster created with key {self.key}, max_health: {self.db.max_health}, health: {self.db.health}")
 
     def reset(self):
-        """Reset the shared monster's health and state."""
+        """Reset the shared monster's health, state, and ice effects."""
         self.db.health = self.db.max_health
         self.db.state = "alive"
         self.db.desc = "A fearsome monster with glowing red eyes."
         self.db.last_reset = time.time()
+        self.db.ice_effects = []  # Reset ice effects
         self.update_all_instances()
         logger.log_info(f"SharedMonster {self.key} reset. Health: {self.db.health}/{self.db.max_health}, Instances: {len(self.db.instances)}")
 
@@ -77,6 +79,7 @@ class SharedMonster(DefaultObject):
         self.db.state = "dead"
         self.db.health = 0
         self.db.desc = f"The lifeless body of the {self.key} lies here."
+        self.db.ice_effects = []  # Clear ice effects on defeat
         self.update_all_instances()
         utils.delay(60, self.reset)  # Reset after 60 seconds
         logger.log_info(f"SharedMonster {self.key} defeated. Instances: {len(self.db.instances)}")
@@ -109,6 +112,26 @@ class SharedMonster(DefaultObject):
             self.db.instances.append(instance)
             logger.log_info(f"Added new instance to SharedMonster {self.key}. Total instances: {len(self.db.instances)}")
 
+    def add_ice_effect(self):
+        """Add an ice effect to the monster."""
+        ice_effect_end_time = time.time() + 10  # 10 seconds duration
+        self.db.ice_effects.append(ice_effect_end_time)
+        logger.log_info(f"Added ice effect to SharedMonster {self.key}. Total ice effects: {len(self.db.ice_effects)}")
+        self.update_all_instances()
+
+    def get_active_ice_effects(self):
+        """Get the number of active ice effects."""
+        current_time = time.time()
+        active_effects = [effect for effect in self.db.ice_effects if effect > current_time]
+        self.db.ice_effects = active_effects  # Clean up expired effects
+        return len(active_effects)
+
+    def calculate_fire_damage(self):
+        """Calculate fire damage based on active ice effects."""
+        base_damage = 10
+        active_ice_effects = self.get_active_ice_effects()
+        return base_damage + (90 * active_ice_effects)
+
 class Monster(DefaultObject):
     """
     A monster instance that represents the shared monster in a specific dungeon.
@@ -129,6 +152,7 @@ class Monster(DefaultObject):
             self.db.max_health = shared.db.max_health
             self.db.state = shared.db.state
             self.db.desc = shared.db.desc
+            self.db.ice_effects = shared.db.ice_effects
             logger.log_info(f"Monster instance {self.key} synced with SharedMonster. Health: {self.db.health}/{self.db.max_health}")
         else:
             logger.log_error(f"Monster instance {self.key} failed to sync: shared_monster is None")
@@ -160,7 +184,8 @@ class Monster(DefaultObject):
         """Customize the appearance of the monster based on its state"""
         self.sync_with_shared()  # Ensure up-to-date information before displaying
         if self.db.state == "alive":
-            return f"A fearsome {self.key} with glowing red eyes. It has {self.db.health}/{self.db.max_health} health."
+            ice_effects = len(self.db.ice_effects)
+            return f"A fearsome {self.key} with glowing red eyes. It has {self.db.health}/{self.db.max_health} health and is affected by {ice_effects} ice effect(s)."
         else:
             return self.db.desc
 
@@ -168,9 +193,26 @@ class Monster(DefaultObject):
         """Customize how the monster's name is displayed in room descriptions"""
         self.sync_with_shared()  # Ensure up-to-date information before displaying
         if self.db.state == "alive":
-            return f"{self.name} (Alive, HP: {self.db.health}/{self.db.max_health})"
+            ice_effects = len(self.db.ice_effects)
+            return f"{self.name} (Alive, HP: {self.db.health}/{self.db.max_health}, Ice: {ice_effects})"
         else:
             return f"{self.name} (Dead)"
+
+    def add_ice_effect(self):
+        """Add an ice effect to the monster."""
+        if self.db.shared_monster:
+            self.db.shared_monster.add_ice_effect()
+            self.sync_with_shared()
+        else:
+            logger.log_error(f"Monster instance {self.key} failed to add ice effect: shared_monster is None")
+
+    def calculate_fire_damage(self):
+        """Calculate fire damage based on active ice effects."""
+        if self.db.shared_monster:
+            return self.db.shared_monster.calculate_fire_damage()
+        else:
+            logger.log_error(f"Monster instance {self.key} failed to calculate fire damage: shared_monster is None")
+            return 10  # Default damage if shared monster is not available
 
 def get_or_create_shared_monster():
     """Get the shared monster object or create it if it doesn't exist."""
