@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bomberman Game</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        #game-board {
+            font-family: monospace;
+            white-space: pre;
+        }
+    </style>
+</head>
+<body>
+    <h1>Bomberman Game</h1>
+    <div id="game-board"></div>
+    <script>
+        function updateGameState() {
+            $.getJSON('/game_state', function(data) {
+                $('#game-board').text(data.board);
+            });
+        }
+
+        $(document).ready(function() {
+            updateGameState();
+            setInterval(updateGameState, 1000);  // Update every second
+        });
+    </script>
+</body>
+</html>
