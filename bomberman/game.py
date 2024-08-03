@@ -37,19 +37,46 @@ class Player:
         self.x = x
         self.y = y
 
-    def move(self, dx, dy, board):
+    def move(self, direction, board):
+        dx, dy = {
+            'up': (0, -1),
+            'down': (0, 1),
+            'left': (-1, 0),
+            'right': (1, 0)
+        }.get(direction, (0, 0))
+
         new_x = self.x + dx
         new_y = self.y + dy
         if 0 <= new_x < board.width and 0 <= new_y < board.height and board.grid[new_y][new_x] == ' ':
             self.x = new_x
             self.y = new_y
+            return True
+        return False
 
     def place_bomb(self, board):
         # This is a placeholder for future bomb placement logic
-        pass
+        board.grid[self.y][self.x] = 'B'
+        return True
+
+class Game:
+    def __init__(self, width=15, height=15):
+        self.board = Board(width, height)
+        self.player = Player(1, 1, 1)
+
+    def move_player(self, direction):
+        return self.player.move(direction, self.board)
+
+    def place_bomb(self):
+        return self.player.place_bomb(self.board)
+
+    def get_game_state(self):
+        game_state = str(self.board)
+        game_state = game_state.split('\n')
+        game_state[self.player.y] = game_state[self.player.y][:self.player.x] + 'P' + game_state[self.player.y][self.player.x+1:]
+        return '\n'.join(game_state)
 
 # Example usage:
-board = Board(15, 15)
-player = Player(1, 1, 1)
-print("Bomberman Game")
-print(board)
+if __name__ == "__main__":
+    game = Game(15, 15)
+    print("Bomberman Game")
+    print(game.get_game_state())
