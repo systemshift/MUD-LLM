@@ -32,7 +32,7 @@ Destroying stones gives you 10 points, but getting hit by an explosion costs 50 
 Bombs explode after 3 moves, damaging stones and the player in a cross pattern with a range of 2.
 
 Given the current game state, provide a plan for the next 10 moves to play the game strategically.
-Valid commands are: up, down, left, right, bomb.
+Valid commands are: up, down, left, right, bomb, pass.
 
 Current game state:
 {game_state}
@@ -51,8 +51,8 @@ Respond with a JSON object containing:
 
 Example response:
 {{
-    "plan": ["up", "right", "bomb", "left", "down", "right", "up", "bomb", "left", "down"],
-    "thoughts": "I plan to move towards the nearest breakable stone, place a bomb, and then move to safety. After that, I'll navigate to the next cluster of breakable stones."
+    "plan": ["up", "right", "bomb", "left", "down", "pass", "right", "up", "bomb", "left"],
+    "thoughts": "I plan to move towards the nearest breakable stone, place a bomb, and then move to safety. I'll use 'pass' if I need to wait for a bomb to explode. After that, I'll navigate to the next cluster of breakable stones."
 }}
 """
 
@@ -74,7 +74,7 @@ Example response:
         return command_data
     except json.JSONDecodeError:
         print("Error: Invalid JSON response from OpenAI")
-        return {"plan": ["up"], "thoughts": "Error in parsing response"}
+        return {"plan": ["pass"], "thoughts": "Error in parsing response"}
 
 def main():
     last_move = "None"
@@ -107,7 +107,7 @@ def main():
         command = plan.pop(0)
         print(f"Executing command: {command}")
 
-        if command in ["up", "down", "left", "right"]:
+        if command in ["up", "down", "left", "right", "pass"]:
             response = requests.post(f"{BASE_URL}/move", json={"direction": command})
             last_move = command
         elif command == "bomb":

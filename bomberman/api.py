@@ -7,7 +7,7 @@ game = Game()
 @app.route('/move', methods=['POST'])
 def move():
     direction = request.json.get('direction')
-    if direction not in ['up', 'down', 'left', 'right']:
+    if direction not in ['up', 'down', 'left', 'right', 'pass']:
         return jsonify({"error": "Invalid direction"}), 400
     success = game.move_player(direction)
     return jsonify({

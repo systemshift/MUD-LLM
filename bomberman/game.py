@@ -50,7 +50,8 @@ class Player:
             'up': (0, -1),
             'down': (0, 1),
             'left': (-1, 0),
-            'right': (1, 0)
+            'right': (1, 0),
+            'pass': (0, 0)
         }.get(direction, (0, 0))
 
         new_x = self.x + dx
@@ -131,10 +132,3 @@ class Game:
 
     def get_game_info(self):
         return f"Move: {self.move_counter}, Score: {self.player.score}, Player Position: ({self.player.x}, {self.player.y})"
-
-# Example usage:
-if __name__ == "__main__":
-    game = Game(15, 15)
-    print("Bomberman Game")
-    print(game.get_game_state())
-    print(game.get_game_info())
