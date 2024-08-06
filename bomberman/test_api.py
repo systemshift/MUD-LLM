@@ -17,7 +17,7 @@ def print_game_state(game_state, game_info, debug_info):
     print(game_info)
     print(f"Debug Info: {debug_info}")
 
-def get_openai_command(game_state, game_info, last_move):
+def get_openai_command(game_state, game_info, last_move, previous_thoughts):
     prompt = f"""
 You are an AI agent playing a Bomberman game. Your objective is to destroy breakable stones and avoid explosions.
 The game board is represented by:
@@ -31,7 +31,7 @@ You can destroy breakable stones ('S') by placing bombs next to them.
 Destroying stones gives you 10 points, but getting hit by an explosion costs 50 points.
 Bombs explode after 3 moves, damaging stones and the player in a cross pattern with a range of 2.
 
-Given the current game state, provide a single command to play the game strategically.
+Given the current game state, provide a plan for the next 10 moves to play the game strategically.
 Valid commands are: up, down, left, right, bomb.
 
 Current game state:
@@ -42,26 +42,46 @@ Game info:
 
 Your last move was: {last_move}
 
-Respond with a single word command (up, down, left, right, or bomb):
+Your previous thoughts:
+{previous_thoughts}
+
+Respond with a JSON object containing:
+1. A list of 10 commands for your next moves.
+2. Your thoughts on the current game state and strategy.
+
+Example response:
+{{
+    "plan": ["up", "right", "bomb", "left", "down", "right", "up", "bomb", "left", "down"],
+    "thoughts": "I plan to move towards the nearest breakable stone, place a bomb, and then move to safety. After that, I'll navigate to the next cluster of breakable stones."
+}}
 """
 
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
-            {"role": "system", "content": "You are an AI agent playing Bomberman. Provide a single command to play strategically."},
+            {"role": "system", "content": "You are an AI agent playing Bomberman. Provide a plan for the next 10 moves and your thoughts on the game strategy."},
             {"role": "user", "content": prompt}
         ],
-        max_tokens=1,
+        max_tokens=300,
         n=1,
         stop=None,
         temperature=0.5,
     )
 
-    command = response.choices[0].message.content.strip().lower()
-    return command
+    response_content = response.choices[0].message.content.strip()
+    try:
+        command_data = json.loads(response_content)
+        return command_data
+    except json.JSONDecodeError:
+        print("Error: Invalid JSON response from OpenAI")
+        return {"plan": ["up"], "thoughts": "Error in parsing response"}
 
 def main():
     last_move = "None"
+    previous_thoughts = "No previous thoughts."
+    move_counter = 0
+    plan = []
+
     while True:
         # Get the current game state
         response = requests.get(f"{BASE_URL}/state")
@@ -75,9 +95,17 @@ def main():
             print(f"Error getting game state: {response.status_code}")
             break
 
-        # Get command from OpenAI
-        command = get_openai_command(game_state, game_info, last_move)
-        print(f"OpenAI command: {command}")
+        # Get command from OpenAI if we don't have a plan or have exhausted the current plan
+        if not plan:
+            command_data = get_openai_command(game_state, game_info, last_move, previous_thoughts)
+            plan = command_data["plan"]
+            previous_thoughts = command_data["thoughts"]
+            print(f"New plan: {plan}")
+            print(f"Thoughts: {previous_thoughts}")
+
+        # Execute the next move in the plan
+        command = plan.pop(0)
+        print(f"Executing command: {command}")
 
         if command in ["up", "down", "left", "right"]:
             response = requests.post(f"{BASE_URL}/move", json={"direction": command})
@@ -95,6 +123,10 @@ def main():
             print(f"Debug Info: {data['debug_info']}")
         else:
             print(f"Error: {response.status_code}")
+
+        move_counter += 1
+        if move_counter % 10 == 0:
+            print(f"Completed 10 moves. Previous thoughts: {previous_thoughts}")
 
 if __name__ == "__main__":
     print("Bomberman API Test with OpenAI")
