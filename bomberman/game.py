@@ -77,20 +77,20 @@ class Game:
 
     def move_player(self, direction):
         print(f"DEBUG: Attempting to move {direction}")
-        if self.player.move(direction, self.board):
-            self.move_counter += 1
-            self.update_bombs()
+        move_success = self.player.move(direction, self.board)
+        self.move_counter += 1
+        self.update_bombs()
+        if move_success:
             print(f"DEBUG: Player moved to ({self.player.x}, {self.player.y})")
-            return True
-        print(f"DEBUG: Player move failed")
-        return False
+        else:
+            print(f"DEBUG: Player move failed")
+        return move_success
 
     def place_bomb(self):
-        if self.player.place_bomb(self.board):
-            self.move_counter += 1
-            self.update_bombs()
-            return True
-        return False
+        bomb_placed = self.player.place_bomb(self.board)
+        self.move_counter += 1
+        self.update_bombs()
+        return bomb_placed
 
     def update_bombs(self):
         exploded_bombs = []
