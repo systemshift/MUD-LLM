@@ -1,6 +1,7 @@
 import requests
 from openai import OpenAI
 import json
+import re
 
 BASE_URL = "http://localhost:5000"
 
@@ -18,7 +19,7 @@ def print_game_state(game_state, game_info, debug_info):
     print(f"Debug Info: {debug_info}")
 
 def get_openai_command(game_state, game_info, last_move, previous_thoughts):
-    prompt = f"""
+    system_prompt = """
 You are an AI agent playing a Bomberman game. Your objective is to destroy breakable stones and avoid explosions.
 The game board is represented by:
 '#' for walls (indestructible)
@@ -31,9 +32,22 @@ You can destroy breakable stones ('S') by placing bombs next to them.
 Destroying stones gives you 10 points, but getting hit by an explosion costs 50 points.
 Bombs explode after 3 moves, damaging stones and the player in a cross pattern with a range of 2.
 
-Given the current game state, provide a plan for the next 10 moves to play the game strategically.
 Valid commands are: up, down, left, right, bomb, pass.
 
+Given the current game state, provide a plan for the next 10 moves to play the game strategically.
+
+Respond with a JSON object containing:
+1. A list of 10 commands for your next moves.
+2. Your thoughts on the current game state and strategy.
+
+Example response:
+{
+    "plan": ["up", "right", "bomb", "left", "down", "pass", "right", "up", "bomb", "left"],
+    "thoughts": "I plan to move towards the nearest breakable stone, place a bomb, and then move to safety. I'll use 'pass' if I need to wait for a bomb to explode. After that, I'll navigate to the next cluster of breakable stones."
+}
+"""
+
+    user_prompt = f"""
 Current game state:
 {game_state}
 
@@ -45,36 +59,52 @@ Your last move was: {last_move}
 Your previous thoughts:
 {previous_thoughts}
 
-Respond with a JSON object containing:
-1. A list of 10 commands for your next moves.
-2. Your thoughts on the current game state and strategy.
-
-Example response:
-{{
-    "plan": ["up", "right", "bomb", "left", "down", "pass", "right", "up", "bomb", "left"],
-    "thoughts": "I plan to move towards the nearest breakable stone, place a bomb, and then move to safety. I'll use 'pass' if I need to wait for a bomb to explode. After that, I'll navigate to the next cluster of breakable stones."
-}}
+Provide your next 10 moves and thoughts on the current game state and strategy.
 """
 
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": "You are an AI agent playing Bomberman. Provide a plan for the next 10 moves and your thoughts on the game strategy."},
-            {"role": "user", "content": prompt}
-        ],
-        max_tokens=300,
-        n=1,
-        stop=None,
-        temperature=0.5,
-    )
-
-    response_content = response.choices[0].message.content.strip()
     try:
-        command_data = json.loads(response_content)
-        return command_data
-    except json.JSONDecodeError:
-        print("Error: Invalid JSON response from OpenAI")
+        response = client.chat.completions.create(
+            model="gpt-4o-2024-08-06",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            max_tokens=300,
+            n=1,
+            stop=None,
+            temperature=0.5,
+        )
+
+        response_content = response.choices[0].message.content.strip()
+        print("Raw OpenAI response:")
+        print(response_content)
+        print("End of raw response")
+
+        # Extract JSON from the response
+        json_match = re.search(r'\{.*\}', response_content, re.DOTALL)
+        if json_match:
+            try:
+                command_data = json.loads(json_match.group())
+                print("Successfully extracted JSON from the response.")
+                return command_data
+            except json.JSONDecodeError as json_error:
+                print(f"Error: Invalid JSON in extracted content. JSON error: {str(json_error)}")
+        else:
+            print("Error: No valid JSON object found in the response.")
+
+        # If JSON extraction fails, attempt to parse the entire response
+        try:
+            command_data = json.loads(response_content)
+            return command_data
+        except json.JSONDecodeError as json_error:
+            print(f"Error: Invalid JSON in entire response. JSON error: {str(json_error)}")
+
+        # If all parsing attempts fail, return a default response
         return {"plan": ["pass"], "thoughts": "Error in parsing response"}
+
+    except Exception as e:
+        print(f"Error: Failed to get response from OpenAI. Error: {str(e)}")
+        return {"plan": ["pass"], "thoughts": "Error in getting response from OpenAI"}
 
 def main():
     last_move = "None"
