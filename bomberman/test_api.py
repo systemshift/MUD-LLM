@@ -2,6 +2,9 @@ import requests
 from openai import OpenAI
 import json
 import re
+import numpy as np
+from typing import List, Tuple
+import time
 
 BASE_URL = "http://localhost:5000"
 
@@ -12,13 +15,40 @@ with open("/home/decoy/MUD-LLM/bomberman/api", "r") as api_file:
 # Initialize OpenAI client
 client = OpenAI(api_key=api_key)
 
-def print_game_state(game_state, game_info, debug_info):
+def print_game_state(game_state: str, game_info: str, debug_info: str):
     print("\nCurrent Game State:")
     print(game_state)
     print(game_info)
     print(f"Debug Info: {debug_info}")
 
-def get_openai_command(game_state, game_info, last_move, previous_thoughts):
+def parse_game_state(game_state: str) -> np.ndarray:
+    return np.array([list(row) for row in game_state.strip().split('\n')])
+
+def get_player_position(game_state: np.ndarray) -> Tuple[int, int]:
+    player_pos = np.where(game_state == 'P')
+    return player_pos[0][0], player_pos[1][0]
+
+def get_nearest_stone(game_state: np.ndarray, player_pos: Tuple[int, int]) -> Tuple[int, int]:
+    stones = np.where(game_state == 'S')
+    if len(stones[0]) == 0:
+        return None
+    distances = np.sqrt((stones[0] - player_pos[0])**2 + (stones[1] - player_pos[1])**2)
+    nearest_index = np.argmin(distances)
+    return stones[0][nearest_index], stones[1][nearest_index]
+
+def simple_rule_based_move(game_state: np.ndarray, player_pos: Tuple[int, int]) -> str:
+    nearest_stone = get_nearest_stone(game_state, player_pos)
+    if nearest_stone is None:
+        return "pass"
+    
+    dy, dx = nearest_stone[0] - player_pos[0], nearest_stone[1] - player_pos[1]
+    
+    if abs(dy) > abs(dx):
+        return "down" if dy > 0 else "up"
+    else:
+        return "right" if dx > 0 else "left"
+
+def get_openai_command(game_state: str, game_info: str, last_move: str, previous_thoughts: str) -> dict:
     system_prompt = """
 You are an AI agent playing a Bomberman game. Your objective is to destroy breakable stones and avoid explosions.
 The game board is represented by:
@@ -28,22 +58,33 @@ The game board is represented by:
 'P' for your current position
 'B' for bombs
 
-You can destroy breakable stones ('S') by placing bombs next to them.
-Destroying stones gives you 10 points, but getting hit by an explosion costs 50 points.
-Bombs explode after 3 moves, damaging stones and the player in a cross pattern with a range of 2.
+Game mechanics:
+1. You can destroy breakable stones ('S') by placing bombs next to them.
+2. Destroying stones gives you 10 points, but getting hit by an explosion costs 50 points.
+3. Bombs explode after 3 moves, damaging stones and the player in a cross pattern with a range of 2.
 
 Valid commands are: up, down, left, right, bomb, pass.
 
-Given the current game state, provide a plan for the next 10 moves to play the game strategically.
+Provide a plan for the next 5 moves to play the game strategically.
+
+Good moves:
+- Moving towards the nearest stone to bomb it
+- Placing a bomb next to multiple stones
+- Moving away from a placed bomb
+
+Bad moves:
+- Walking into a bomb's explosion range
+- Placing a bomb when surrounded by walls
+- Moving away from the goal (bottom-right corner) without a good reason
 
 Respond with a JSON object containing:
-1. A list of 10 commands for your next moves.
+1. A list of 5 commands for your next moves.
 2. Your thoughts on the current game state and strategy.
 
 Example response:
 {
-    "plan": ["up", "right", "bomb", "left", "down", "pass", "right", "up", "bomb", "left"],
-    "thoughts": "I plan to move towards the nearest breakable stone, place a bomb, and then move to safety. I'll use 'pass' if I need to wait for a bomb to explode. After that, I'll navigate to the next cluster of breakable stones."
+    "plan": ["right", "bomb", "left", "down", "pass"],
+    "thoughts": "I'm moving right to place a bomb next to two stones, then retreating left and down to avoid the explosion. I'll wait one turn for the bomb to explode before proceeding."
 }
 """
 
@@ -59,7 +100,7 @@ Your last move was: {last_move}
 Your previous thoughts:
 {previous_thoughts}
 
-Provide your next 10 moves and thoughts on the current game state and strategy.
+Provide your next 5 moves and thoughts on the current game state and strategy.
 """
 
     try:
@@ -99,12 +140,19 @@ Provide your next 10 moves and thoughts on the current game state and strategy.
         except json.JSONDecodeError as json_error:
             print(f"Error: Invalid JSON in entire response. JSON error: {str(json_error)}")
 
-        # If all parsing attempts fail, return a default response
-        return {"plan": ["pass"], "thoughts": "Error in parsing response"}
+        # If all parsing attempts fail, use rule-based system
+        game_state_array = parse_game_state(game_state)
+        player_pos = get_player_position(game_state_array)
+        rule_based_move = simple_rule_based_move(game_state_array, player_pos)
+        return {"plan": [rule_based_move], "thoughts": "Using rule-based system due to parsing error."}
 
     except Exception as e:
         print(f"Error: Failed to get response from OpenAI. Error: {str(e)}")
-        return {"plan": ["pass"], "thoughts": "Error in getting response from OpenAI"}
+        # Use rule-based system as fallback
+        game_state_array = parse_game_state(game_state)
+        player_pos = get_player_position(game_state_array)
+        rule_based_move = simple_rule_based_move(game_state_array, player_pos)
+        return {"plan": [rule_based_move], "thoughts": "Using rule-based system due to API error."}
 
 def main():
     last_move = "None"
@@ -144,19 +192,29 @@ def main():
             response = requests.post(f"{BASE_URL}/bomb")
             last_move = "bomb"
         else:
-            print("Invalid command from OpenAI. Skipping this turn.")
-            continue
-        
+            print("Invalid command. Using rule-based system.")
+            game_state_array = parse_game_state(game_state)
+            player_pos = get_player_position(game_state_array)
+            command = simple_rule_based_move(game_state_array, player_pos)
+            response = requests.post(f"{BASE_URL}/move", json={"direction": command})
+            last_move = command
+
         if response.status_code == 200:
             data = response.json()
             print(f"Move result: {data['success']}")
             print(f"Debug Info: {data['debug_info']}")
         else:
             print(f"Error: {response.status_code}")
+            # Clear the plan if there's an error
+            plan = []
 
         move_counter += 1
-        if move_counter % 10 == 0:
-            print(f"Completed 10 moves. Previous thoughts: {previous_thoughts}")
+        if move_counter % 5 == 0:
+            print(f"Completed 5 moves. Previous thoughts: {previous_thoughts}")
+            # Clear the plan to get a new one every 5 moves
+            plan = []
+
+        time.sleep(0.1)  # Add a small delay to prevent overwhelming the server
 
 if __name__ == "__main__":
     print("Bomberman API Test with OpenAI")
