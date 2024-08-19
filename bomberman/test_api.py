@@ -8,12 +8,7 @@ import time
 
 BASE_URL = "http://localhost:5000"
 
-# Load OpenAI API key
-with open("/home/decoy/MUD-LLM/bomberman/api", "r") as api_file:
-    api_key = api_file.read().strip()
-
-# Initialize OpenAI client
-client = OpenAI(api_key=api_key)
+client = OpenAI()
 
 def print_game_state(game_state: str, game_info: str, debug_info: str):
     print("\nCurrent Game State:")
@@ -105,7 +100,7 @@ Provide your next 5 moves and thoughts on the current game state and strategy.
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4o-2024-08-06",
+            model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
