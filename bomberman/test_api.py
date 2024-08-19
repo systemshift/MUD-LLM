@@ -115,12 +115,6 @@ Provide your next 5 moves and thoughts on the current game state and strategy.
         except json.JSONDecodeError as json_error:
             print(f"Error: Invalid JSON in entire response. JSON error: {str(json_error)}")
 
-        # If all parsing attempts fail, use rule-based system
-        game_state_array = parse_game_state(game_state)
-        player_pos = get_player_position(game_state_array)
-        rule_based_move = simple_rule_based_move(game_state_array, player_pos)
-        return {"plan": [rule_based_move], "thoughts": "Using rule-based system due to parsing error."}
-
     except Exception as e:
         print(f"Error: Failed to get response from OpenAI. Error: {str(e)}")
         # Use rule-based system as fallback
