@@ -23,26 +23,6 @@ def get_player_position(game_state: np.ndarray) -> Tuple[int, int]:
     player_pos = np.where(game_state == 'P')
     return player_pos[0][0], player_pos[1][0]
 
-def get_nearest_stone(game_state: np.ndarray, player_pos: Tuple[int, int]) -> Tuple[int, int]:
-    stones = np.where(game_state == 'S')
-    if len(stones[0]) == 0:
-        return None
-    distances = np.sqrt((stones[0] - player_pos[0])**2 + (stones[1] - player_pos[1])**2)
-    nearest_index = np.argmin(distances)
-    return stones[0][nearest_index], stones[1][nearest_index]
-
-def simple_rule_based_move(game_state: np.ndarray, player_pos: Tuple[int, int]) -> str:
-    nearest_stone = get_nearest_stone(game_state, player_pos)
-    if nearest_stone is None:
-        return "pass"
-    
-    dy, dx = nearest_stone[0] - player_pos[0], nearest_stone[1] - player_pos[1]
-    
-    if abs(dy) > abs(dx):
-        return "down" if dy > 0 else "up"
-    else:
-        return "right" if dx > 0 else "left"
-
 def get_openai_command(game_state: str, game_info: str, last_move: str, previous_thoughts: str) -> dict:
     system_prompt = """
 You are an AI agent playing a Bomberman game. Your objective is to destroy breakable stones and avoid explosions.
