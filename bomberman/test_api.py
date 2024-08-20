@@ -1,7 +1,6 @@
 import requests
 from openai import OpenAI
 import json
-import re
 import numpy as np
 from typing import List, Tuple
 import time
@@ -23,7 +22,29 @@ def get_player_position(game_state: np.ndarray) -> Tuple[int, int]:
     player_pos = np.where(game_state == 'P')
     return player_pos[0][0], player_pos[1][0]
 
-def get_openai_command(game_state: str, game_info: str, last_move: str, previous_thoughts: str) -> dict:
+def get_openai_command(game_state: str, game_info: str, last_move: str) -> List[str]:
+    functions = [
+        {
+            "name": "make_moves",
+            "description": "Make a series of 10 moves in the Bomberman game",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "moves": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "enum": ["up", "down", "left", "right", "bomb", "pass"]
+                        },
+                        "minItems": 10,
+                        "maxItems": 10
+                    }
+                },
+                "required": ["moves"]
+            }
+        }
+    ]
+
     system_prompt = """
 You are an AI agent playing a Bomberman game. Your objective is to destroy breakable stones and avoid explosions.
 The game board is represented by:
@@ -38,9 +59,7 @@ Game mechanics:
 2. Destroying stones gives you 10 points, but getting hit by an explosion costs 50 points.
 3. Bombs explode after 3 moves, damaging stones and the player in a cross pattern with a range of 2.
 
-Valid commands are: up, down, left, right, bomb, pass.
-
-Provide a plan for the next 5 moves to play the game strategically.
+Use the provided function to make exactly 10 moves. Valid moves are: up, down, left, right, bomb, pass.
 
 Good moves:
 - Moving towards the nearest stone to bomb it
@@ -51,16 +70,9 @@ Bad moves:
 - Walking into a bomb's explosion range
 - Placing a bomb when surrounded by walls
 - Moving away from the goal (bottom-right corner) without a good reason
+- Using 'pass' when there are better moves available
 
-Respond with a JSON object containing:
-1. A list of 5 commands for your next moves.
-2. Your thoughts on the current game state and strategy.
-
-Example response:
-{
-    "plan": ["right", "bomb", "left", "down", "pass"],
-    "thoughts": "I'm moving right to place a bomb next to two stones, then retreating left and down to avoid the explosion. I'll wait one turn for the bomb to explode before proceeding."
-}
+Remember to plan ahead for all 10 moves, considering the consequences of your actions and the game state changes.
 """
 
     user_prompt = f"""
@@ -72,10 +84,7 @@ Game info:
 
 Your last move was: {last_move}
 
-Your previous thoughts:
-{previous_thoughts}
-
-Provide your next 5 moves and thoughts on the current game state and strategy.
+Provide your next 10 moves using the make_moves function. Be strategic and avoid unnecessary 'pass' moves. Plan ahead for all 10 moves, considering how the game state will change after each action.
 """
 
     response = client.chat.completions.create(
@@ -84,32 +93,47 @@ Provide your next 5 moves and thoughts on the current game state and strategy.
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt}
         ],
-        max_tokens=300,
+        functions=functions,
+        function_call={"name": "make_moves"},
+        max_tokens=500,
         n=1,
         stop=None,
         temperature=0.5,
     )
 
-    response_content = response.choices[0].message.content.strip()
-    print("Raw OpenAI response:")
-    print(response_content)
-    print("End of raw response")
-
-    # Extract JSON from the response
-    json_match = re.search(r'\{.*\}', response_content, re.DOTALL)
-    if json_match:
-        try:
-            command_data = json.loads(json_match.group())
-            print("Successfully extracted JSON from the response.")
-            return command_data
-        except json.JSONDecodeError as json_error:
-            print(f"Error: Invalid JSON in extracted content. JSON error: {str(json_error)}")
+    if response.choices[0].message.function_call:
+        moves = json.loads(response.choices[0].message.function_call.arguments)["moves"]
+        return moves
     else:
-        print("Error: No valid JSON object found in the response.")
+        print("Error: No function call in the response")
+        return ["pass"] * 10
+
+def search_next_n_steps(game_state: str, game_info: str, n: int = 10) -> List[str]:
+    """
+    Search for the next N steps and make commands based on the current game state.
+    
+    :param game_state: Current game state as a string
+    :param game_info: Current game info as a string
+    :param n: Number of steps to search ahead (default is 10)
+    :return: List of commands for the next N steps
+    """
+    last_move = "None"
+    
+    # Get the initial plan from OpenAI using function calling
+    plan = get_openai_command(game_state, game_info, last_move)
+    
+    print(f"Initial plan: {plan}")
+    
+    # Ensure we have exactly N steps
+    if len(plan) < n:
+        plan.extend(["pass"] * (n - len(plan)))
+    elif len(plan) > n:
+        plan = plan[:n]
+    
+    return plan
 
 def main():
     last_move = "None"
-    previous_thoughts = "No previous thoughts."
     move_counter = 0
     plan = []
 
@@ -126,13 +150,10 @@ def main():
             print(f"Error getting game state: {response.status_code}")
             break
 
-        # Get command from OpenAI if we don't have a plan or have exhausted the current plan
+        # Get command from search_next_n_steps if we don't have a plan or have exhausted the current plan
         if not plan:
-            command_data = get_openai_command(game_state, game_info, last_move, previous_thoughts)
-            plan = command_data["plan"]
-            previous_thoughts = command_data["thoughts"]
+            plan = search_next_n_steps(game_state, game_info)
             print(f"New plan: {plan}")
-            print(f"Thoughts: {previous_thoughts}")
 
         # Execute the next move in the plan
         command = plan.pop(0)
@@ -155,9 +176,9 @@ def main():
             plan = []
 
         move_counter += 1
-        if move_counter % 5 == 0:
-            print(f"Completed 5 moves. Previous thoughts: {previous_thoughts}")
-            # Clear the plan to get a new one every 5 moves
+        if move_counter % 10 == 0:
+            print(f"Completed 10 moves.")
+            # Clear the plan to get a new one every 10 moves
             plan = []
 
         time.sleep(0.1)  # Add a small delay to prevent overwhelming the server
