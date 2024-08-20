@@ -78,50 +78,34 @@ Your previous thoughts:
 Provide your next 5 moves and thoughts on the current game state and strategy.
 """
 
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            max_tokens=300,
-            n=1,
-            stop=None,
-            temperature=0.5,
-        )
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ],
+        max_tokens=300,
+        n=1,
+        stop=None,
+        temperature=0.5,
+    )
 
-        response_content = response.choices[0].message.content.strip()
-        print("Raw OpenAI response:")
-        print(response_content)
-        print("End of raw response")
+    response_content = response.choices[0].message.content.strip()
+    print("Raw OpenAI response:")
+    print(response_content)
+    print("End of raw response")
 
-        # Extract JSON from the response
-        json_match = re.search(r'\{.*\}', response_content, re.DOTALL)
-        if json_match:
-            try:
-                command_data = json.loads(json_match.group())
-                print("Successfully extracted JSON from the response.")
-                return command_data
-            except json.JSONDecodeError as json_error:
-                print(f"Error: Invalid JSON in extracted content. JSON error: {str(json_error)}")
-        else:
-            print("Error: No valid JSON object found in the response.")
-
-        # If JSON extraction fails, attempt to parse the entire response
+    # Extract JSON from the response
+    json_match = re.search(r'\{.*\}', response_content, re.DOTALL)
+    if json_match:
         try:
-            command_data = json.loads(response_content)
+            command_data = json.loads(json_match.group())
+            print("Successfully extracted JSON from the response.")
             return command_data
         except json.JSONDecodeError as json_error:
-            print(f"Error: Invalid JSON in entire response. JSON error: {str(json_error)}")
-
-    except Exception as e:
-        print(f"Error: Failed to get response from OpenAI. Error: {str(e)}")
-        # Use rule-based system as fallback
-        game_state_array = parse_game_state(game_state)
-        player_pos = get_player_position(game_state_array)
-        rule_based_move = simple_rule_based_move(game_state_array, player_pos)
-        return {"plan": [rule_based_move], "thoughts": "Using rule-based system due to API error."}
+            print(f"Error: Invalid JSON in extracted content. JSON error: {str(json_error)}")
+    else:
+        print("Error: No valid JSON object found in the response.")
 
 def main():
     last_move = "None"
@@ -160,13 +144,6 @@ def main():
         elif command == "bomb":
             response = requests.post(f"{BASE_URL}/bomb")
             last_move = "bomb"
-        else:
-            print("Invalid command. Using rule-based system.")
-            game_state_array = parse_game_state(game_state)
-            player_pos = get_player_position(game_state_array)
-            command = simple_rule_based_move(game_state_array, player_pos)
-            response = requests.post(f"{BASE_URL}/move", json={"direction": command})
-            last_move = command
 
         if response.status_code == 200:
             data = response.json()
