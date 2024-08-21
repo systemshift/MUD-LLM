@@ -23,29 +23,33 @@ def get_player_position(game_state: np.ndarray) -> Tuple[int, int]:
     return player_pos[0][0], player_pos[1][0]
 
 def get_openai_command(game_state: str, game_info: str, last_move: str) -> List[str]:
-    functions = [
+    tools = [
         {
-            "name": "make_moves",
-            "description": "Make a series of 10 moves in the Bomberman game",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "moves": {
-                        "type": "array",
-                        "items": {
-                            "type": "string",
-                            "enum": ["up", "down", "left", "right", "bomb", "pass"]
-                        },
-                        "minItems": 10,
-                        "maxItems": 10
-                    }
-                },
-                "required": ["moves"]
+            "type": "function",
+            "function": {
+                "name": "make_moves",
+                "description": "Make a series of 10 moves in the Bomberman game",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "moves": {
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "enum": ["up", "down", "left", "right", "bomb", "pass"]
+                            },
+                            "minItems": 10,
+                            "maxItems": 10
+                        }
+                    },
+                    "required": ["moves"]
+                }
             }
         }
     ]
 
-    system_prompt = """
+    messages = [
+        {"role": "system", "content": """
 You are an AI agent playing a Bomberman game. Your objective is to destroy breakable stones and avoid explosions.
 The game board is represented by:
 '#' for walls (indestructible)
@@ -73,9 +77,8 @@ Bad moves:
 - Using 'pass' when there are better moves available
 
 Remember to plan ahead for all 10 moves, considering the consequences of your actions and the game state changes.
-"""
-
-    user_prompt = f"""
+        """},
+        {"role": "user", "content": f"""
 Current game state:
 {game_state}
 
@@ -85,28 +88,25 @@ Game info:
 Your last move was: {last_move}
 
 Provide your next 10 moves using the make_moves function. Be strategic and avoid unnecessary 'pass' moves. Plan ahead for all 10 moves, considering how the game state will change after each action.
-"""
+        """}
+    ]
 
     response = client.chat.completions.create(
         model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ],
-        functions=functions,
-        function_call={"name": "make_moves"},
+        messages=messages,
+        tools=tools,
+        tool_choice="auto",
         max_tokens=500,
-        n=1,
-        stop=None,
-        temperature=0.5,
     )
 
-    if response.choices[0].message.function_call:
-        moves = json.loads(response.choices[0].message.function_call.arguments)["moves"]
-        return moves
-    else:
-        print("Error: No function call in the response")
-        return ["pass"] * 10
+    if response.choices[0].message.tool_calls:
+        tool_call = response.choices[0].message.tool_calls[0]
+        if tool_call.function.name == "make_moves":
+            moves = json.loads(tool_call.function.arguments)["moves"]
+            return moves
+    
+    print("Error: No valid function call in the response")
+    return ["pass"] * 10
 
 def search_next_n_steps(game_state: str, game_info: str, n: int = 10) -> List[str]:
     """
