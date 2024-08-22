@@ -22,7 +22,18 @@ def get_player_position(game_state: np.ndarray) -> Tuple[int, int]:
     player_pos = np.where(game_state == 'P')
     return player_pos[0][0], player_pos[1][0]
 
-def get_openai_command(game_state: str, game_info: str, last_move: str) -> List[str]:
+def get_valid_moves(game_state: np.ndarray, player_pos: Tuple[int, int]) -> List[str]:
+    valid_moves = []
+    directions = [('up', (-1, 0)), ('down', (1, 0)), ('left', (0, -1)), ('right', (0, 1))]
+    for direction, (dy, dx) in directions:
+        new_y, new_x = player_pos[0] + dy, player_pos[1] + dx
+        if 0 <= new_y < game_state.shape[0] and 0 <= new_x < game_state.shape[1]:
+            if game_state[new_y, new_x] in [' ', 'S']:
+                valid_moves.append(direction)
+    valid_moves.extend(['bomb', 'pass'])
+    return valid_moves
+
+def get_openai_command(game_state: str, game_info: str, last_move: str, valid_moves: List[str]) -> List[str]:
     tools = [
         {
             "type": "function",
@@ -36,7 +47,7 @@ def get_openai_command(game_state: str, game_info: str, last_move: str) -> List[
                             "type": "array",
                             "items": {
                                 "type": "string",
-                                "enum": ["up", "down", "left", "right", "bomb", "pass"]
+                                "enum": valid_moves
                             },
                             "minItems": 10,
                             "maxItems": 10
@@ -49,7 +60,7 @@ def get_openai_command(game_state: str, game_info: str, last_move: str) -> List[
     ]
 
     messages = [
-        {"role": "system", "content": """
+        {"role": "system", "content": f"""
 You are an AI agent playing a Bomberman game. Your objective is to destroy breakable stones and avoid explosions.
 The game board is represented by:
 '#' for walls (indestructible)
@@ -63,7 +74,7 @@ Game mechanics:
 2. Destroying stones gives you 10 points, but getting hit by an explosion costs 50 points.
 3. Bombs explode after 3 moves, damaging stones and the player in a cross pattern with a range of 2.
 
-Use the provided function to make exactly 10 moves. Valid moves are: up, down, left, right, bomb, pass.
+Use the provided function to make exactly 10 moves. Valid moves are: {', '.join(valid_moves)}.
 
 Good moves:
 - Moving towards the nearest stone to bomb it
@@ -86,6 +97,8 @@ Game info:
 {game_info}
 
 Your last move was: {last_move}
+
+Valid moves for your next action: {', '.join(valid_moves)}
 
 Provide your next 10 moves using the make_moves function. Be strategic and avoid unnecessary 'pass' moves. Plan ahead for all 10 moves, considering how the game state will change after each action.
         """}
@@ -118,9 +131,12 @@ def search_next_n_steps(game_state: str, game_info: str, n: int = 10) -> List[st
     :return: List of commands for the next N steps
     """
     last_move = "None"
+    game_array = parse_game_state(game_state)
+    player_pos = get_player_position(game_array)
+    valid_moves = get_valid_moves(game_array, player_pos)
     
     # Get the initial plan from OpenAI using function calling
-    plan = get_openai_command(game_state, game_info, last_move)
+    plan = get_openai_command(game_state, game_info, last_move, valid_moves)
     
     print(f"Initial plan: {plan}")
     
