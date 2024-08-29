@@ -48,27 +48,37 @@ class GameStateProcessor:
 
         for _ in range(10):
             if nearest_stone:
-                # Move towards the nearest stone
-                dy = np.sign(nearest_stone[0] - current_pos[0])
-                dx = np.sign(nearest_stone[1] - current_pos[1])
-                move = self.move_map.get((dx, dy))
-                
-                if move in safe_moves:
-                    moves.append(move)
-                    current_pos = (current_pos[0] + dy, current_pos[1] + dx)
-                elif self._manhattan_distance(current_pos, nearest_stone) == 1:
-                    # If next to the stone, place a bomb
+                # Check if we're next to a breakable stone
+                if self._manhattan_distance(current_pos, nearest_stone) == 1:
+                    # Place a bomb
                     moves.append("bomb")
                     # Move away from the bomb
                     for safe_move in safe_moves:
-                        if safe_move != self.move_map.get((-dx, -dy)):  # Don't move back towards the bomb
+                        dx, dy = self._get_direction_from_move(safe_move)
+                        new_pos = (current_pos[0] + dy, current_pos[1] + dx)
+                        if state_array[new_pos] == ' ':
                             moves.append(safe_move)
+                            current_pos = new_pos
                             break
                     else:
                         moves.append("pass")  # If no safe move, pass
+                    nearest_stone = None  # Reset nearest stone after bombing
                 else:
-                    # If can't move directly towards stone, choose a random safe move
-                    moves.append(np.random.choice(safe_moves) if safe_moves else "pass")
+                    # Move towards the nearest stone
+                    dy = np.sign(nearest_stone[0] - current_pos[0])
+                    dx = np.sign(nearest_stone[1] - current_pos[1])
+                    move = self.move_map.get((dx, dy))
+                    
+                    if move in safe_moves:
+                        moves.append(move)
+                        current_pos = (current_pos[0] + dy, current_pos[1] + dx)
+                    else:
+                        # If can't move directly towards stone, choose a random safe move
+                        random_move = np.random.choice(safe_moves) if safe_moves else "pass"
+                        moves.append(random_move)
+                        if random_move != "pass":
+                            dx, dy = self._get_direction_from_move(random_move)
+                            current_pos = (current_pos[0] + dy, current_pos[1] + dx)
             else:
                 # If no stones left, move towards the bottom-right corner
                 dy = 1 if current_pos[0] < state_array.shape[0] - 2 else 0
@@ -81,4 +91,14 @@ class GameStateProcessor:
                 else:
                     moves.append(np.random.choice(safe_moves) if safe_moves else "pass")
 
+            # Find new nearest stone if needed
+            if nearest_stone is None:
+                stone_positions = np.where(state_array == 'S')
+                if len(stone_positions[0]) > 0:
+                    distances = [self._manhattan_distance(current_pos, (y, x)) for y, x in zip(stone_positions[0], stone_positions[1])]
+                    nearest_stone = (stone_positions[0][np.argmin(distances)], stone_positions[1][np.argmin(distances)])
+
         return moves
+
+    def _get_direction_from_move(self, move):
+        return next((k for k, v in self.move_map.items() if v == move), (0, 0))
