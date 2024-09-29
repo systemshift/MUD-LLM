@@ -24,7 +24,7 @@ def get_player_position(game_state: np.ndarray) -> Tuple[int, int]:
     return player_pos[0][0], player_pos[1][0]
 
 def get_openai_command(game_state: str, game_info: str, last_move: str, previous_thoughts: str) -> dict:
-    system_prompt = """
+    combined_prompt = f"""
 You are an AI agent playing a Bomberman game. Your objective is to destroy breakable stones and avoid explosions.
 The game board is represented by:
 '#' for walls (indestructible)
@@ -40,7 +40,7 @@ Game mechanics:
 
 Valid commands are: up, down, left, right, bomb, pass.
 
-Provide a plan for the next 5 moves to play the game strategically.
+Provide a plan for the next 30 moves to play the game strategically.
 
 Good moves:
 - Moving towards the nearest stone to bomb it
@@ -53,17 +53,15 @@ Bad moves:
 - Moving away from the goal (bottom-right corner) without a good reason
 
 Respond with a JSON object containing:
-1. A list of 5 commands for your next moves.
+1. A list of 30 commands for your next moves.
 2. Your thoughts on the current game state and strategy.
 
 Example response:
-{
-    "plan": ["right", "bomb", "left", "down", "pass"],
-    "thoughts": "I'm moving right to place a bomb next to two stones, then retreating left and down to avoid the explosion. I'll wait one turn for the bomb to explode before proceeding."
-}
-"""
+{{
+    "plan": ["right", "bomb", "left", "down", "pass", ...],  // 30 moves total
+    "thoughts": "I'm moving right to place a bomb next to two stones, then retreating left and down to avoid the explosion. I'll continue to navigate the board, destroying stones and avoiding explosions."
+}}
 
-    user_prompt = f"""
 Current game state:
 {game_state}
 
@@ -75,19 +73,15 @@ Your last move was: {last_move}
 Your previous thoughts:
 {previous_thoughts}
 
-Provide your next 5 moves and thoughts on the current game state and strategy.
+Provide your next 30 moves and thoughts on the current game state and strategy.
 """
 
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
+            {"role": "user", "content": combined_prompt}
         ],
-        max_tokens=300,
-        n=1,
-        stop=None,
-        temperature=0.5,
+        n=1
     )
 
     response_content = response.choices[0].message.content.strip()
@@ -155,9 +149,9 @@ def main():
             plan = []
 
         move_counter += 1
-        if move_counter % 5 == 0:
-            print(f"Completed 5 moves. Previous thoughts: {previous_thoughts}")
-            # Clear the plan to get a new one every 5 moves
+        if move_counter % 30 == 0:
+            print(f"Completed 30 moves. Previous thoughts: {previous_thoughts}")
+            # Clear the plan to get a new one every 30 moves
             plan = []
 
         time.sleep(0.1)  # Add a small delay to prevent overwhelming the server
