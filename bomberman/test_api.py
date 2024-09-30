@@ -77,7 +77,7 @@ Provide your next 30 moves and thoughts on the current game state and strategy.
 """
 
     response = client.chat.completions.create(
-        model="gpt-4o-mini",
+        model="o1-mini",
         messages=[
             {"role": "user", "content": combined_prompt}
         ],
