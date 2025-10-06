@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bomberman Multi-Agent Game</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/game.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎮 Bomberman Multi-Agent</h1>
+            <div class="controls">
+                <button id="startBtn" class="btn btn-primary">Start Game</button>
+                <button id="pauseBtn" class="btn btn-secondary" disabled>Pause</button>
+                <button id="resetBtn" class="btn btn-warning">Reset</button>
+                <select id="speedControl" class="select">
+                    <option value="0.5">2x Speed</option>
+                    <option value="1" selected>Normal</option>
+                    <option value="2">0.5x Speed</option>
+                    <option value="5">0.2x Speed</option>
+                </select>
+            </div>
+        </header>
+
+        <div class="main-content">
+            <!-- Game Board -->
+            <div class="game-section">
+                <div class="board-container">
+                    <canvas id="gameCanvas" width="750" height="750"></canvas>
+                    <div id="gameStatus" class="status">
+                        <span id="moveCount">Move: 0</span>
+                        <span id="activePlayer">Waiting...</span>
+                    </div>
+                </div>
+
+                <!-- Players Panel -->
+                <div class="players-panel">
+                    <h3>Players</h3>
+                    <div id="playersList"></div>
+                </div>
+            </div>
+
+            <!-- Right Sidebar -->
+            <div class="sidebar">
+                <!-- Game Settings -->
+                <div class="panel">
+                    <h3>Game Settings</h3>
+                    <div class="setting">
+                        <label>Players:</label>
+                        <select id="numPlayers">
+                            <option value="1" selected>1</option>
+                            <option value="2">2</option>
+                            <option value="3">3</option>
+                            <option value="4">4</option>
+                        </select>
+                    </div>
+                    <div class="setting">
+                        <label>Board Size:</label>
+                        <select id="boardSize">
+                            <option value="15" selected>15x15</option>
+                            <option value="17">17x17</option>
+                            <option value="19">19x19</option>
+                            <option value="21">21x21</option>
+                        </select>
+                    </div>
+                    <div class="setting">
+                        <label>AI Model:</label>
+                        <select id="aiModel">
+                            <option value="gpt-5" selected>GPT-5</option>
+                            <option value="gpt-5-mini">GPT-5 Mini</option>
+                            <option value="gpt-5-nano">GPT-5 Nano</option>
+                            <option value="o4-mini">o4-mini</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Agent Activity Log -->
+                <div class="panel">
+                    <h3>Agent Activity</h3>
+                    <div id="activityLog" class="log-container"></div>
+                </div>
+
+                <!-- Chat/Coordination (for future hypergraph) -->
+                <div class="panel" style="display:none;" id="chatPanel">
+                    <h3>Agent Coordination</h3>
+                    <div id="chatLog" class="chat-container"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script src="{{ url_for('static', filename='js/game.js') }}"></script>
+</body>
+</html>

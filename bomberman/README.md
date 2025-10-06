@@ -21,7 +21,23 @@ bomberman/
 
 ## Quick Start
 
-### 1. Start Server
+### Option 1: Web UI (Recommended)
+
+Watch AI agents play in your browser with live visualization!
+
+```bash
+# Start web UI
+source MUD-LLM-venv/bin/activate
+python run_web.py
+
+# Open browser to http://localhost:5001
+# Configure players, board size, AI model in the UI
+# Click "Start Game" to watch agents play
+```
+
+### Option 2: Command Line
+
+#### 1. Start Server
 
 ```bash
 # Terminal 1: Start server with default settings (1 player, 15x15)
@@ -32,7 +48,7 @@ python run_server.py
 python run_server.py --players 4 --width 21 --height 21
 ```
 
-### 2. Run Agents
+#### 2. Run Agents
 
 ```bash
 # Terminal 2: Run single agent
@@ -52,8 +68,26 @@ Edit `bomberman/config.py` to change:
 - LLM model
 - Server settings
 
+## Web UI Features
+
+- **Live Board Visualization**: See agents move in real-time with canvas rendering
+- **Player Stats**: Track scores, positions for all players
+- **Activity Log**: View agent decisions and moves
+- **Game Controls**: Start/pause/reset, adjust speed
+- **Configuration**: Set players, board size, AI model from UI
+
 ## Usage Examples
 
+### Web UI
+```bash
+# Start web UI with custom port
+python run_web.py --port 8080
+
+# Allow external connections
+python run_web.py --host 0.0.0.0 --port 5001
+```
+
+### Command Line
 ```bash
 # Single player, 100 moves, GPT-5
 python run_agents.py --players 1 --max-moves 100 --model gpt-5
