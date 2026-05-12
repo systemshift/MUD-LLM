@@ -54,7 +54,7 @@ DEBUG_MODE = True
 
 # LLM model to use for agents
 # Options: "gpt-5", "gpt-5-mini", "gpt-5-nano", "o4-mini", "gpt-4o-mini"
-LLM_MODEL = "gpt-5"
+LLM_MODEL = "gpt-5.5"
 
 # Number of moves to plan ahead
 MOVES_PER_PLAN = 10

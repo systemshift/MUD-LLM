@@ -5,8 +5,8 @@ Manages multiple agents and coordinates their turns
 import requests
 import time
 from typing import List, Dict
-from agents.base_agent import BaseAgent
-from config import MOVE_DELAY
+from bomberman.agents.base_agent import BaseAgent
+from bomberman.config import MOVE_DELAY
 
 
 class GameOrchestrator:

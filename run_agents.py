@@ -32,7 +32,7 @@ Examples:
     parser.add_argument('--players', '-p', type=int, default=1,
                         help='Number of AI players (default: 1)')
     parser.add_argument('--model', '-m', type=str, default=LLM_MODEL,
-                        choices=['gpt-5', 'gpt-5-mini', 'gpt-5-nano', 'o4-mini', 'gpt-4o-mini'],
+                        choices=['gpt-5.5', 'gpt-5', 'gpt-5-mini', 'gpt-5-nano', 'o4-mini', 'gpt-4o-mini'],
                         help=f'LLM model to use (default: {LLM_MODEL})')
     parser.add_argument('--server', '-s', type=str,
                         default=f"http://{SERVER_HOST}:{SERVER_PORT}",

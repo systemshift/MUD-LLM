@@ -9,12 +9,12 @@ import os
 import threading
 import time
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from core.engine import GameEngine
-from agents.llm_agent import LLMAgent
-from orchestrator import GameOrchestrator
-from config import SERVER_HOST, SERVER_PORT
+from bomberman.core.engine import GameEngine
+from bomberman.agents.llm_agent import LLMAgent
+from bomberman.orchestrator import GameOrchestrator
+from bomberman.config import SERVER_HOST, SERVER_PORT
 
 app = Flask(__name__,
             template_folder='templates',
