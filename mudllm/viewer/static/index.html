@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>MUD-LLM viewer</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <h1>MUD-LLM <span>viewer</span></h1>
+    <label class="runs">Replay
+      <select id="runSelect"><option value="">choose a run…</option></select>
+    </label>
+    <button id="refreshRuns" title="Refresh run list">↻</button>
+    <button id="toggleLive" class="accent">Live game</button>
+  </header>
+
+  <section id="livePanel" hidden>
+    <label>Agent
+      <select id="livePolicy">
+        <option value="greedy">greedy (scripted, free)</option>
+        <option value="llm-intent">llm-intent</option>
+      </select>
+    </label>
+    <label>Model <input id="liveModel" value="gpt-6-astra" size="12"></label>
+    <label>Effort
+      <select id="liveEffort"><option>low</option><option selected>medium</option><option>high</option></select>
+    </label>
+    <label>Players <input id="livePlayers" type="number" min="1" max="4" value="1"></label>
+    <label>Seed <input id="liveSeed" type="number" value="1"></label>
+    <label>Think ticks <input id="liveThink" type="number" min="0" value="0"></label>
+    <label>Max ticks <input id="liveMax" type="number" min="10" value="400"></label>
+    <button id="liveStart" class="accent">Start</button>
+    <button id="liveStop">Stop</button>
+    <label class="check"><input id="liveFollow" type="checkbox" checked> follow</label>
+    <span id="liveStatus"></span>
+  </section>
+
+  <main>
+    <div class="stage">
+      <canvas id="board" width="600" height="600"></canvas>
+      <div class="timeline">
+        <button id="prev" title="Step back (←)">⏮</button>
+        <button id="play" title="Play/pause (space)">▶</button>
+        <button id="next" title="Step forward (→)">⏭</button>
+        <input id="scrub" type="range" min="0" max="0" value="0">
+        <select id="speed" title="Playback speed">
+          <option value="2">0.25×</option>
+          <option value="4">0.5×</option>
+          <option value="8" selected>1×</option>
+          <option value="16">2×</option>
+          <option value="32">4×</option>
+        </select>
+      </div>
+      <div class="ticker"><span id="tickLabel">no run loaded</span><span id="stonesLabel"></span></div>
+    </div>
+
+    <aside>
+      <div class="card" id="runInfo"><h2>Run</h2><div class="muted">Load a replay or start a live game.</div></div>
+      <div class="card"><h2>Players</h2><div id="players"></div></div>
+      <div class="card grow"><h2>Orders <span class="muted small">(newest first)</span></h2><div id="orders"></div></div>
+    </aside>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>

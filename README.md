@@ -20,7 +20,7 @@ benchmark). The codebase is now being rewritten around that goal.
 |---|---|---|
 | 1 | Deterministic tick-based simulation, Bomberman port, event logs | done |
 | 2 | Controller (intents, pathfinding), event-driven agent runtime, simulated clock | done |
-| 3 | Viewer: live stream and replay from event logs | |
+| 3 | Viewer: live stream and replay from event logs | done |
 | 4 | Multiplayer, comms layer (broadcast / spatial / team / hypergraph / vector), dungeon game | |
 | 5 | First experiment: broadcast vs hyperedges as N grows | |
 
@@ -35,6 +35,8 @@ mudllm/
 │   └── providers/   model adapters (OpenAI Responses API) with token/cost tracking
 ├── policies/     scripted primitive-action baseline (BFS)
 ├── loop.py       event-driven multi-agent loop on a simulated clock
+├── replay.py     event log -> per-tick frames (what the viewer renders)
+├── viewer/       stdlib web server + canvas UI: replays and live games
 ├── runner.py     solo plan-execute loop (primitive-action benchmark)
 └── cli.py        mudllm command
 ```
@@ -59,7 +61,14 @@ mudllm bench --log-dir runs/             # also write JSONL event logs
 mudllm bench --policy llm-intent --model gpt-6-astra                   # LLM gives orders
 mudllm bench --policy llm-intent --think-ticks 20                      # thinking costs 20 ticks
 mudllm bench --policy llm-primitive --model gpt-6-astra                # LLM presses every key
+
+mudllm view                              # http://127.0.0.1:8000
 ```
+
+The viewer replays any JSONL log under `runs/` (scrub, step, speed, orders feed
+with each agent's reasoning) and can start live games, scripted or LLM, with
+1-4 players. Deep link to a moment with `/?run=<path>&tick=<n>`; live games are
+saved to `runs/live/`.
 
 ## History
 

@@ -7,7 +7,7 @@ The engine is pure and deterministic: same seed + same actions = same game.
 """
 
 import random
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 
 from ...sim import Event, Pos, step
 
@@ -79,7 +79,7 @@ class BombermanGame:
         self.players = {i + 1: Player(i + 1, pos) for i, pos in enumerate(spawns)}
         self.bombs: list[Bomb] = []
         self.initial_stones = self.stones_remaining()
-        return [Event(0, "init", self.snapshot() | {"seed": seed})]
+        return [Event(0, "init", self.snapshot() | {"seed": seed, "config": asdict(self.config)})]
 
     def spawns(self) -> list[Pos]:
         h, w = self.config.height, self.config.width

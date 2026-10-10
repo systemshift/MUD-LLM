@@ -7,6 +7,7 @@ mudllm command line.
   mudllm bench --policy llm-intent --model gpt-6-astra       # LLM gives orders
   mudllm bench --policy llm-intent --think-ticks 20          # thinking costs 20 ticks
   mudllm bench --policy llm-intent --tick-rate 4             # real latency, at 4 ticks/s
+  mudllm view                                                # web viewer on :8000
 """
 
 import argparse
@@ -90,6 +91,11 @@ def cmd_bench(args):
               + (f", est. cost ${cost:.2f} (${cost / n:.2f}/game)" if cost is not None else ""))
 
 
+def cmd_view(args):
+    from .viewer.server import serve
+    serve(args.host, args.port, args.runs)
+
+
 def main():
     parser = argparse.ArgumentParser(prog="mudllm")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -110,6 +116,12 @@ def main():
     bench.add_argument("--workers", type=int, default=5, help="seeds run in parallel")
     bench.add_argument("--log-dir")
     bench.set_defaults(func=cmd_bench)
+
+    view = sub.add_parser("view", help="web viewer: replay runs and watch live games")
+    view.add_argument("--host", default="127.0.0.1")
+    view.add_argument("--port", type=int, default=8000)
+    view.add_argument("--runs", default="runs", help="directory of JSONL event logs")
+    view.set_defaults(func=cmd_view)
 
     args = parser.parse_args()
     args.func(args)

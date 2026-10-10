@@ -62,22 +62,31 @@ class GameResult:
 
 def run_game(game: BombermanGame, agents: list[IntentAgent], clock: Clock | None = None,
              max_ticks: int = 400, heartbeat: int | None = None, safety: bool = True,
-             prefetch: bool | None = None, on_tick=None) -> GameResult:
+             prefetch: bool | None = None, on_tick=None, log: EventLog | None = None,
+             should_stop=None) -> GameResult:
     """
     prefetch: wake an agent when its last order starts, so it thinks while that order runs;
     the new orders queue behind it. Defaults to on whenever thinking costs ticks.
+    log: pass an EventLog to watch the run while it happens (e.g. the live viewer).
+    should_stop: callable checked every tick to end the run early.
     """
     clock = clock or Clock()
     if prefetch is None:
         prefetch = clock.think_ticks > 0 or clock.tick_rate is not None
-    log = EventLog()
+    log = log if log is not None else EventLog()
     log.extend(game.reset(game.seed))
+    log.extend([Event(0, "meta", {
+        "agents": {a.player_id: a.name for a in agents},
+        "think_ticks": clock.think_ticks, "tick_rate": clock.tick_rate, "safety": safety,
+    })])
     slots = {a.player_id: _Slot(a, Controller(game.config, a.player_id, safety=safety))
              for a in agents}
     pool = ThreadPoolExecutor(max_workers=max(1, len(slots)))
 
     try:
         while not game.done and game.tick < max_ticks:
+            if should_stop and should_stop():
+                break
             tick = game.tick
             # Wake agents that need a decision and aren't already thinking
             waking, reason_of = [], {}
@@ -128,6 +137,7 @@ def run_game(game: BombermanGame, agents: list[IntentAgent], clock: Clock | None
                 on_tick(game, events)
     finally:
         pool.shutdown(wait=False)
+    log.extend([Event(game.tick, "end", {"ticks": game.tick, "cleared": game.done})])
 
     players = {}
     for pid, s in slots.items():

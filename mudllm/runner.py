@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from typing import Protocol
 
 from .games.bomberman import BombermanGame, Observation
-from .sim import EventLog
+from .sim import Event, EventLog
 
 FAILURE_EVENTS = {"move_blocked", "bomb_failed"}
 
@@ -48,6 +48,7 @@ def run_solo(game: BombermanGame, policy: PlanPolicy, max_ticks: int = 400,
              player_id: int = 1) -> RunResult:
     log = EventLog()
     log.extend(game.reset(game.seed))
+    log.extend([Event(0, "meta", {"agents": {player_id: policy.name}})])
     plans = failed_actions = 0
 
     while not game.done and game.tick < max_ticks:
@@ -66,6 +67,7 @@ def run_solo(game: BombermanGame, policy: PlanPolicy, max_ticks: int = 400,
             executed += 1
         policy.feedback(planned, executed, failed)
 
+    log.extend([Event(game.tick, "end", {"ticks": game.tick, "cleared": game.done})])
     me = game.players[player_id]
     return RunResult(
         seed=game.seed, cleared=game.done,
