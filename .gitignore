@@ -2,3 +2,8 @@
 bomberman/api
 bomberman/claudeapi
 .env
+.venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+runs/

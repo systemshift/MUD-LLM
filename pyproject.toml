@@ -1,0 +1,32 @@
+[project]
+name = "mudllm"
+version = "0.1.0"
+description = "Multi-agent LLM simulations for testing hypergraph communication in agent swarms"
+requires-python = ">=3.12"
+dependencies = [
+    "openai>=2.2",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[project.scripts]
+mudllm = "mudllm.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["mudllm"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
