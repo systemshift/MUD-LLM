@@ -1,4 +1,5 @@
-from mudllm.control import Controller, Intent, danger_map, plan_path
+from mudllm.control import BombermanController as Controller
+from mudllm.control import Intent, danger_map, plan_path
 from mudllm.control.bomberman import safe_from
 from mudllm.games.bomberman import BombermanConfig, BombermanGame
 from mudllm.games.bomberman.game import STONE, Bomb

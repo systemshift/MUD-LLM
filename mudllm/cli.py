@@ -7,7 +7,7 @@ mudllm command line.
   mudllm bench --policy llm-intent --model gpt-6-astra       # LLM gives orders
   mudllm bench --policy llm-intent --think-ticks 20          # thinking costs 20 ticks
   mudllm bench --policy llm-intent --tick-rate 4             # real latency, at 4 ticks/s
-  mudllm view                                                # web viewer on :8000
+  mudllm view                                                # web viewer on :8765
 """
 
 import argparse
@@ -37,26 +37,38 @@ def run_one(args, config: BombermanConfig, seed: int) -> dict:
         summary = result.summary()
         summary["usage"] = vars(policy.usage).copy() if hasattr(policy, "usage") else None
     else:
+        from .agents.providers import Usage
+        from .comms import make_router
+
         clock = Clock(think_ticks=args.think_ticks, tick_rate=args.tick_rate)
-        if args.policy == "greedy":
-            from .agents.greedy import GreedyIntentAgent
-            agent = GreedyIntentAgent(1, config)
-        else:
-            from .agents.llm_intent import LLMIntentAgent
-            # what the agent is told a decision costs; ~6s latency is typical for real-latency mode
-            think_hint = (args.think_ticks if args.tick_rate is None
-                          else round(6 * args.tick_rate))
-            from .agents.providers.openai import OpenAIProvider
-            agent = LLMIntentAgent(1, config, OpenAIProvider(args.model, args.effort),
-                                   memory=not args.no_memory,
-                                   think_ticks=think_hint)
-        result = run_game(game, [agent], clock, max_ticks=args.max_ticks,
-                          safety=not args.no_safety)
-        p = result.players[1]
-        summary = {"seed": seed, "cleared": result.cleared,
-                   "stones": result.summary()["stones"], "score": p["score"], "hits": p["hits"],
-                   "ticks": result.ticks, "decisions": p["decisions"],
-                   "idle_ticks": p["idle_ticks"], "usage": p["usage"]}
+        agents = []
+        for pid in range(1, config.num_players + 1):
+            if args.policy == "greedy":
+                from .agents.greedy import GreedyIntentAgent
+                agents.append(GreedyIntentAgent(pid, config))
+            else:
+                from .agents.llm_intent import LLMIntentAgent
+                from .agents.providers.openai import OpenAIProvider
+                # what the agent is told a decision costs; ~6s latency is typical
+                think_hint = (args.think_ticks if args.tick_rate is None
+                              else round(6 * args.tick_rate))
+                agents.append(LLMIntentAgent(pid, config, OpenAIProvider(args.model, args.effort),
+                                             memory=not args.no_memory, think_ticks=think_hint))
+        result = run_game(game, agents, clock, max_ticks=args.max_ticks,
+                          safety=not args.no_safety, comms=make_router(args.comms))
+        usage = Usage()
+        for p in result.players.values():
+            usage.add(Usage(**p["usage"]))
+        summary = {"seed": seed, "cleared": result.cleared, "stones": result.game["stones"],
+                   "ticks": result.ticks,
+                   "score": sum(p["score"] for p in result.players.values()),
+                   "hits": sum(p["hits"] for p in result.players.values()),
+                   "decisions": sum(p["decisions"] for p in result.players.values()),
+                   "idle_ticks": sum(p["idle_ticks"] for p in result.players.values()),
+                   "usage": vars(usage)}
+        if config.num_players > 1:
+            summary["team_scores"] = result.game["team_scores"]
+            summary["messages"] = result.comms["sent"]
     if args.log_dir:
         Path(args.log_dir).mkdir(parents=True, exist_ok=True)
         result.log.write_jsonl(Path(args.log_dir) / f"{args.policy}_seed{seed}.jsonl")
@@ -66,7 +78,9 @@ def run_one(args, config: BombermanConfig, seed: int) -> dict:
 def cmd_bench(args):
     from .agents.providers import Usage
 
-    config = BombermanConfig(width=args.size, height=args.size)
+    teams = tuple(int(t) for t in args.teams.split(",")) if args.teams else None
+    config = BombermanConfig(width=args.size, height=args.size, num_players=args.players,
+                             teams=teams)
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
         summaries = list(pool.map(lambda s: run_one(args, config, s), args.seeds))
 
@@ -91,6 +105,69 @@ def cmd_bench(args):
               + (f", est. cost ${cost:.2f} (${cost / n:.2f}/game)" if cost is not None else ""))
 
 
+def run_dungeon(args, seed: int) -> dict:
+    from .comms import make_router
+    from .games.dungeon import DungeonConfig, DungeonGame
+
+    config = DungeonConfig(num_rooms=args.rooms, num_players=args.players)
+    game = DungeonGame(config, seed=seed)
+    agents = []
+    for pid in game.player_ids():
+        if args.policy == "independent":
+            from .agents.dungeon_scripted import IndependentAgent
+            agents.append(IndependentAgent(pid, config))
+        elif args.policy == "oracle":
+            from .agents.dungeon_scripted import OracleAgent
+            agents.append(OracleAgent(pid, game))
+        else:
+            from .agents.llm_dungeon import LLMDungeonAgent
+            from .agents.providers.openai import OpenAIProvider
+            agents.append(LLMDungeonAgent(pid, config, OpenAIProvider(args.model, args.effort),
+                                          think_ticks=args.think_ticks))
+    router_kwargs = {}
+    if args.comms == "vector" and args.embedder == "openai":
+        from .comms import OpenAIEmbedder
+        router_kwargs["embedder"] = OpenAIEmbedder()
+    result = run_game(game, agents, Clock(think_ticks=args.think_ticks), max_ticks=args.max_ticks,
+                      comms=make_router(args.comms, **router_kwargs))
+    if args.log_dir:
+        Path(args.log_dir).mkdir(parents=True, exist_ok=True)
+        name = f"dungeon_{args.policy}_{args.comms}_seed{seed}.jsonl"
+        result.log.write_jsonl(Path(args.log_dir) / name)
+    fires = [e.data for e in result.log.of_kind("fire")]
+    from .agents.providers import Usage
+    usage = Usage()
+    for p in result.players.values():
+        usage.add(Usage(**p["usage"]))
+    return {"seed": seed, "cleared": result.cleared, "monsters": result.game["monsters"],
+            "ticks": result.ticks, "hp_left": result.game["hp_left"], "fires": len(fires),
+            "avg_stacks": round(sum(f["stacks"] for f in fires) / max(1, len(fires)), 2),
+            "messages": result.comms["sent"], "deliveries": result.comms["deliveries"],
+            "usage": vars(usage)}
+
+
+def cmd_dungeon(args):
+    from .agents.providers import Usage
+
+    with ThreadPoolExecutor(max_workers=args.workers) as pool:
+        summaries = list(pool.map(lambda s: run_dungeon(args, s), args.seeds))
+    total = Usage()
+    for s in summaries:
+        print(json.dumps({k: v for k, v in s.items() if k != "usage"}))
+        total.add(Usage(**s["usage"]))
+    n = len(summaries)
+    print(f"\ndungeon {args.policy} comms={args.comms}: cleared "
+          f"{sum(s['cleared'] for s in summaries)}/{n}, "
+          f"mean ticks {sum(s['ticks'] for s in summaries) / n:.0f}, "
+          f"mean stacks/fire {sum(s['avg_stacks'] for s in summaries) / n:.2f}, "
+          f"messages {sum(s['messages'] for s in summaries)}")
+    if total.calls:
+        cost = total.cost(args.model)
+        print(f"calls {total.calls}, in {total.input_tokens} (cached {total.cached_tokens}), "
+              f"out {total.output_tokens}"
+              + (f", est. cost ${cost:.2f} (${cost / n:.2f}/game)" if cost is not None else ""))
+
+
 def cmd_view(args):
     from .viewer.server import serve
     serve(args.host, args.port, args.runs)
@@ -111,15 +188,37 @@ def main():
                        help="simulated ticks each decision costs (intent policies)")
     bench.add_argument("--tick-rate", type=float,
                        help="charge real latency instead: ticks per second")
+    bench.add_argument("--players", type=int, default=1, help="1-4 (intent policies)")
+    bench.add_argument("--teams", help="team id per player, e.g. 1,1,2,2")
+    bench.add_argument("--comms", default="none",
+                       choices=["none", "broadcast", "team", "spatial", "hypergraph", "vector"])
     bench.add_argument("--no-memory", action="store_true", help="stateless LLM calls")
     bench.add_argument("--no-safety", action="store_true", help="disable the dodge reflex")
     bench.add_argument("--workers", type=int, default=5, help="seeds run in parallel")
     bench.add_argument("--log-dir")
     bench.set_defaults(func=cmd_bench)
 
+    dungeon = sub.add_parser("dungeon", help="cooperative shared-monster dungeon")
+    dungeon.add_argument("--policy", default="independent",
+                         choices=["independent", "oracle", "llm"])
+    dungeon.add_argument("--comms", default="none",
+                         choices=["none", "broadcast", "team", "spatial", "hypergraph", "vector"])
+    dungeon.add_argument("--embedder", default="hash", choices=["hash", "openai"],
+                         help="embeddings for --comms vector")
+    dungeon.add_argument("--rooms", type=int, default=8)
+    dungeon.add_argument("--players", type=int, default=16)
+    dungeon.add_argument("--model", default="gpt-6-astra")
+    dungeon.add_argument("--effort", default="medium")
+    dungeon.add_argument("--seeds", type=int, nargs="+", default=[1, 2, 3])
+    dungeon.add_argument("--max-ticks", type=int, default=300)
+    dungeon.add_argument("--think-ticks", type=int, default=0)
+    dungeon.add_argument("--workers", type=int, default=3)
+    dungeon.add_argument("--log-dir")
+    dungeon.set_defaults(func=cmd_dungeon)
+
     view = sub.add_parser("view", help="web viewer: replay runs and watch live games")
     view.add_argument("--host", default="127.0.0.1")
-    view.add_argument("--port", type=int, default=8000)
+    view.add_argument("--port", type=int, default=8765)
     view.add_argument("--runs", default="runs", help="directory of JSONL event logs")
     view.set_defaults(func=cmd_view)
 

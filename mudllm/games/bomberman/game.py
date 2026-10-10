@@ -25,12 +25,15 @@ class BombermanConfig:
     stone_probability: float = 0.3
     stone_points: int = 10
     hit_penalty: int = -50
+    teams: tuple[int, ...] | None = None  # team id per player; None = everyone for themselves
 
     def __post_init__(self):
         if self.width % 2 == 0 or self.height % 2 == 0:
             raise ValueError("board dimensions must be odd for the wall grid")
         if not 1 <= self.num_players <= 4:
             raise ValueError("num_players must be 1-4")
+        if self.teams is not None and len(self.teams) != self.num_players:
+            raise ValueError("teams needs one team id per player")
 
 
 @dataclass
@@ -224,6 +227,47 @@ class BombermanGame:
             events.append(Event(t, "player_hit", {"player": pid, "pos": player.pos, "by": owners}))
         return events
 
+    # ------------------------------------------------------------------ loop interface
+
+    def player_ids(self) -> list[int]:
+        return list(self.players)
+
+    def team(self, player_id: int) -> int:
+        return self.config.teams[player_id - 1] if self.config.teams else player_id
+
+    def player_summary(self, player_id: int) -> dict:
+        p = self.players[player_id]
+        return {"score": p.score, "hits": p.hits, "team": self.team(player_id)}
+
+    def summary(self) -> dict:
+        teams: dict[int, int] = {}
+        for p in self.players.values():
+            teams[self.team(p.id)] = teams.get(self.team(p.id), 0) + p.score
+        return {"stones": f"{self.initial_stones - self.stones_remaining()}/{self.initial_stones}",
+                "stones_remaining": self.stones_remaining(), "team_scores": teams}
+
+    def make_controller(self, player_id: int, safety: bool = True):
+        from ...control.bomberman import BombermanController
+        return BombermanController(self.config, player_id, safety=safety)
+
+    def comms_context(self) -> "BombermanGame":
+        return self
+
+    # CommsContext
+    def distance(self, a: int, b: int) -> float:
+        (ra, ca), (rb, cb) = self.players[a].pos, self.players[b].pos
+        return abs(ra - rb) + abs(ca - cb)
+
+    def hyperedges(self) -> dict[str, set[int]]:
+        edges: dict[str, set[int]] = {}
+        for pid in self.players:
+            edges.setdefault(f"team-{self.team(pid)}", set()).add(pid)
+        return edges
+
+    def describe_player(self, player_id: int) -> str:
+        r, c = self.players[player_id].pos
+        return f"P{player_id} at row {r} col {c}"
+
     # ------------------------------------------------------------------ views
 
     def snapshot(self) -> dict:
@@ -252,7 +296,8 @@ class BombermanGame:
             pos=me.pos,
             score=me.score,
             grid=self.render(viewer=player_id),
-            players={p.id: {"pos": p.pos, "score": p.score} for p in self.players.values()},
+            players={p.id: {"pos": p.pos, "score": p.score, "team": self.team(p.id)}
+                     for p in self.players.values()},
             bombs=[{"pos": b.pos, "owner": b.owner, "fuse": b.fuse} for b in self.bombs],
             stones_remaining=self.stones_remaining(),
         )

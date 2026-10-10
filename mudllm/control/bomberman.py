@@ -11,10 +11,10 @@ refuses to bomb a cell it cannot escape from; that is part of "how", not "what".
 """
 
 from collections import deque
-from dataclasses import dataclass
 
 from ..games.bomberman import BombermanConfig, Observation
 from ..sim import DIRECTIONS, Event, Pos, step
+from .base import Intent, Outcome
 
 BLOCKING = {"#", "S"}
 MOVES = tuple(DIRECTIONS)
@@ -114,30 +114,7 @@ def plan_path(grid: list[str], start: Pos, danger: Danger, goal, start_t: int = 
     return None
 
 
-@dataclass
-class Intent:
-    kind: str  # "bomb_at" | "goto" | "wait"
-    target: Pos | None = None
-    ticks: int = 0
-    ref: str | None = None  # correlation id from the agent (e.g. a tool call id)
-    bombed: bool = False
-    elapsed: int = 0
-
-    def describe(self) -> str:
-        if self.kind == "wait":
-            return f"wait({self.ticks})"
-        return f"{self.kind}(row {self.target[0]}, col {self.target[1]})"
-
-
-@dataclass
-class Outcome:
-    intent: Intent
-    status: str  # "done" | "failed" | "cancelled"
-    detail: str
-    tick: int
-
-
-class Controller:
+class BombermanController:
     def __init__(self, config: BombermanConfig, player_id: int, safety: bool = True,
                  timeout: int | None = None):
         self.config = config

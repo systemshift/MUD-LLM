@@ -23,7 +23,7 @@ def test_thinking_time_costs_ticks():
     slow = run_game(BombermanGame(CFG, seed=1), [GreedyIntentAgent(1, CFG)],
                     Clock(think_ticks=10), max_ticks=150)
     assert slow.players[1]["idle_ticks"] > fast.players[1]["idle_ticks"]
-    assert slow.stones_remaining > fast.stones_remaining
+    assert slow.game["stones_remaining"] > fast.game["stones_remaining"]
 
 
 def test_multiplayer_runs_with_simultaneous_agents():
@@ -51,10 +51,12 @@ class FakeProvider:
     def __init__(self, scripted: list[list[ToolCall]]):
         self.scripted = scripted
         self.requests: list[dict] = []
+        self.tools: list[dict] = []
 
     def complete(self, instructions, input_items, tools, previous_response_id=None, **kw):
         n = len(self.requests)
         self.requests.append({"items": input_items, "previous": previous_response_id})
+        self.tools.append(tools[0])
         calls = self.scripted[min(n, len(self.scripted) - 1)]
         return Completion(calls, "", f"resp_{n}", Usage(calls=1, input_tokens=100))
 
@@ -72,7 +74,7 @@ def test_llm_intent_agent_returns_tool_results_on_next_turn():
     agent = LLMIntentAgent(1, CFG, provider, memory=True)
     obs = BombermanGame(CFG, seed=1).observe(1)
 
-    intents = agent.decide(obs, Report("start"))
+    intents = agent.decide(obs, Report("start")).intents
     assert [i.kind for i in intents] == ["bomb_at", "goto"]
     assert intents[0].target == (1, 3) and intents[0].ref == "c1"
 
@@ -96,7 +98,7 @@ def test_llm_intent_agent_reports_running_orders_and_late_results():
     ])
     agent = LLMIntentAgent(1, CFG, provider)
     obs = BombermanGame(CFG, seed=1).observe(1)
-    first = agent.decide(obs, Report("start"))
+    first = agent.decide(obs, Report("start")).intents
     agent.decide(obs, Report("your last order is in progress"))
     assert "still running" in provider.requests[1]["items"][0]["output"]
     agent.decide(obs, Report("all orders complete", [Outcome(first[0], "done", "arrived", 9)]))
@@ -107,7 +109,8 @@ def test_llm_intent_agent_caps_orders():
     many = orders(*[("wait", 0, 0, 1)] * 7)
     provider = FakeProvider([[ToolCall("c1", "give_orders", {"orders": many})]])
     agent = LLMIntentAgent(1, CFG, provider)
-    assert len(agent.decide(BombermanGame(CFG, seed=1).observe(1), Report("start"))) == 4
+    decision = agent.decide(BombermanGame(CFG, seed=1).observe(1), Report("start"))
+    assert len(decision.intents) == 4
 
 
 def test_llm_intent_agent_without_memory_inlines_results():
@@ -115,7 +118,7 @@ def test_llm_intent_agent_without_memory_inlines_results():
     provider = FakeProvider([[call]])
     agent = LLMIntentAgent(1, CFG, provider, memory=False)
     obs = BombermanGame(CFG, seed=1).observe(1)
-    intents = agent.decide(obs, Report("start"))
+    intents = agent.decide(obs, Report("start")).intents
     agent.decide(obs, Report("all orders complete", [Outcome(intents[0], "done", "ok", 1)]))
     second = provider.requests[1]
     assert second["previous"] is None
@@ -130,8 +133,8 @@ def test_llm_intent_agent_survives_provider_errors():
             raise RuntimeError("boom")
 
     agent = LLMIntentAgent(1, CFG, Broken())
-    intents = agent.decide(BombermanGame(CFG, seed=1).observe(1), Report("start"))
-    assert intents == [Intent("wait", ticks=1)]
+    decision = agent.decide(BombermanGame(CFG, seed=1).observe(1), Report("start"))
+    assert decision.intents == [Intent("wait", ticks=1)]
     assert agent.usage.errors == 1
 
 
@@ -153,3 +156,33 @@ def test_prefetch_wakes_when_last_order_starts():
     agent = RecordingAgent(1, CFG)
     run_game(BombermanGame(CFG, seed=1), [agent], Clock(think_ticks=0), max_ticks=60)
     assert not any("in progress" in r for r in agent.reasons)
+
+
+def test_llm_agent_tool_gets_comms_fields_only_with_channels():
+    provider = FakeProvider([[ToolCall("c1", "give_orders", {
+        "orders": orders(("wait", 0, 0, 1)),
+        "messages": [{"channel": "team", "text": "I take the north stones"}],
+        "keep_current_orders": True,
+    })]])
+    agent = LLMIntentAgent(1, CFG, provider)
+    obs = BombermanGame(CFG, seed=1).observe(1)
+    decision = agent.decide(obs, Report("start", channels=["team"], comms_info="Team chat."))
+    assert decision.messages[0].text == "I take the north stones"
+    assert decision.replace is False
+    sent_tool = provider.tools[-1]
+    assert "messages" in sent_tool["parameters"]["properties"]
+    assert "COMMS: Team chat." in provider.requests[-1]["items"][-1]["content"]
+
+    agent.decide(obs, Report("all orders complete"))
+    assert "messages" not in provider.tools[-1]["parameters"]["properties"]
+
+
+def test_llm_agent_sees_inbox():
+    from mudllm.comms import Message
+    call = ToolCall("c1", "give_orders", {"orders": orders(("wait", 0, 0, 1))})
+    provider = FakeProvider([[call]])
+    agent = LLMIntentAgent(1, CFG, provider)
+    report = Report("new messages", messages=[Message(3, 2, "team", "help at row 5")],
+                    channels=["team"], comms_info="Team chat.")
+    agent.decide(BombermanGame(CFG, seed=1).observe(1), report)
+    assert "P2 on team: help at row 5" in provider.requests[-1]["items"][-1]["content"]

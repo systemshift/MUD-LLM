@@ -16,12 +16,17 @@
   </header>
 
   <section id="livePanel" hidden>
-    <label>Agent
-      <select id="livePolicy">
-        <option value="greedy">greedy (scripted, free)</option>
-        <option value="llm-intent">llm-intent</option>
+    <label>Game
+      <select id="liveGame"><option value="bomberman">bomberman</option><option value="dungeon">dungeon</option></select>
+    </label>
+    <label>Agent <select id="livePolicy"></select></label>
+    <label>Comms
+      <select id="liveComms">
+        <option>none</option><option>broadcast</option><option>team</option>
+        <option>spatial</option><option>hypergraph</option><option>vector</option>
       </select>
     </label>
+    <label id="liveRoomsLabel">Rooms <input id="liveRooms" type="number" min="3" value="4"></label>
     <label>Model <input id="liveModel" value="gpt-6-astra" size="12"></label>
     <label>Effort
       <select id="liveEffort"><option>low</option><option selected>medium</option><option>high</option></select>
@@ -59,6 +64,7 @@
       <div class="card" id="runInfo"><h2>Run</h2><div class="muted">Load a replay or start a live game.</div></div>
       <div class="card"><h2>Players</h2><div id="players"></div></div>
       <div class="card grow"><h2>Orders <span class="muted small">(newest first)</span></h2><div id="orders"></div></div>
+      <div class="card grow" id="messagesCard" hidden><h2>Messages <span class="muted small">(newest first)</span></h2><div id="messages"></div></div>
     </aside>
   </main>
   <script src="/static/app.js"></script>

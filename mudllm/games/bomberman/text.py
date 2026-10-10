@@ -22,7 +22,9 @@ def describe_bombs(obs: Observation) -> str:
 
 
 def describe_observation(obs: Observation) -> str:
-    others = [f"P{pid} at (row {p['pos'][0]}, col {p['pos'][1]}) score {p['score']}"
+    my_team = obs.players[obs.player_id].get("team")
+    others = [f"P{pid}{' (teammate)' if p.get('team') == my_team else ''} at "
+              f"(row {p['pos'][0]}, col {p['pos'][1]}) score {p['score']}"
               for pid, p in obs.players.items() if pid != obs.player_id]
     lines = [
         f"Tick {obs.tick}. Board ('P' is you):",

@@ -4,8 +4,8 @@ Viewer server (stdlib only).
   GET  /                    the viewer page
   GET  /api/runs            event logs under the runs directory
   GET  /api/run?path=...    {meta, frames} for one log
-  POST /api/live            start a live game
-                            {policy, model, effort, seed, players, think_ticks, max_ticks}
+  POST /api/live            start a live game {game, policy, comms, model, effort, seed,
+                            players, rooms, think_ticks, max_ticks}
   GET  /api/live?since=N    {meta, frames[N:], total, running, error}
   POST /api/live/stop       stop the live game
 """
@@ -18,6 +18,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from ..comms import make_router
 from ..games.bomberman import BombermanConfig, BombermanGame
 from ..loop import Clock, run_game
 from ..replay import Replayer, build_frames
@@ -40,11 +41,22 @@ class LiveGame:
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.thread.start()
 
-    def _agents(self, config: BombermanConfig):
+    def _agents(self, config, game):
         s = self.settings
         agents = []
         for pid in range(1, config.num_players + 1):
-            if s["policy"] == "greedy":
+            if s["policy"] == "independent":
+                from ..agents.dungeon_scripted import IndependentAgent
+                agents.append(IndependentAgent(pid, config))
+            elif s["policy"] == "oracle":
+                from ..agents.dungeon_scripted import OracleAgent
+                agents.append(OracleAgent(pid, game))
+            elif s["policy"] == "llm":
+                from ..agents.llm_dungeon import LLMDungeonAgent
+                from ..agents.providers.openai import OpenAIProvider
+                provider = OpenAIProvider(s["model"], s["effort"])
+                agents.append(LLMDungeonAgent(pid, config, provider, think_ticks=s["think_ticks"]))
+            elif s["policy"] == "greedy":
                 from ..agents.greedy import GreedyIntentAgent
                 agents.append(GreedyIntentAgent(pid, config))
             else:
@@ -57,18 +69,23 @@ class LiveGame:
     def _run(self):
         s = self.settings
         try:
-            config = BombermanConfig(num_players=s["players"])
-            game = BombermanGame(config, seed=s["seed"])
+            if s["game"] == "dungeon":
+                from ..games.dungeon import DungeonConfig, DungeonGame
+                config = DungeonConfig(num_rooms=s["rooms"], num_players=s["players"])
+                game = DungeonGame(config, seed=s["seed"])
+            else:
+                config = BombermanConfig(num_players=min(4, s["players"]))
+                game = BombermanGame(config, seed=s["seed"])
             # Scripted agents decide instantly; pace them so the game is watchable
-            pace = s["policy"] == "greedy"
+            pace = s["policy"] in ("greedy", "independent", "oracle")
 
             def on_tick(*_):
                 if pace:
                     time.sleep(0.1)
 
-            run_game(game, self._agents(config), Clock(think_ticks=s["think_ticks"]),
+            run_game(game, self._agents(config, game), Clock(think_ticks=s["think_ticks"]),
                      max_ticks=s["max_ticks"], log=self.log, on_tick=on_tick,
-                     should_stop=self.stop_flag.is_set)
+                     should_stop=self.stop_flag.is_set, comms=make_router(s["comms"]))
         except Exception as e:
             self.error = f"{type(e).__name__}: {e}"
             traceback.print_exc()
@@ -156,7 +173,10 @@ def make_handler(runs_dir: Path, state: dict):
                     "model": body.get("model", "gpt-6-astra"),
                     "effort": body.get("effort", "medium"),
                     "seed": int(body.get("seed", 1)),
-                    "players": max(1, min(4, int(body.get("players", 1)))),
+                    "game": body.get("game", "bomberman"),
+                    "comms": body.get("comms", "none"),
+                    "rooms": max(3, min(64, int(body.get("rooms", 4)))),
+                    "players": max(1, min(64, int(body.get("players", 1)))),
                     "think_ticks": max(0, int(body.get("think_ticks", 0))),
                     "max_ticks": max(10, min(2000, int(body.get("max_ticks", 400)))),
                 }
@@ -172,7 +192,7 @@ def make_handler(runs_dir: Path, state: dict):
     return Handler
 
 
-def serve(host: str = "127.0.0.1", port: int = 8000, runs_dir: str = "runs"):
+def serve(host: str = "127.0.0.1", port: int = 8765, runs_dir: str = "runs"):
     server = ThreadingHTTPServer((host, port), make_handler(Path(runs_dir), {}))
     print(f"mudllm viewer: http://{host}:{port}  (runs from {Path(runs_dir).resolve()})")
     try:

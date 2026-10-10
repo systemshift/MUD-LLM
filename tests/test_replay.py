@@ -63,3 +63,27 @@ def test_incremental_feed_equals_batch():
         live.feed(events[:n])
     live.feed(events)
     assert live.frames == build_frames(events)[1]
+
+
+def test_dungeon_replay_matches_engine_every_tick():
+    from mudllm.agents.dungeon_scripted import IndependentAgent, OracleAgent
+    from mudllm.games.dungeon import DungeonConfig, DungeonGame
+
+    cfg = DungeonConfig(num_rooms=4, num_players=8)
+    g = DungeonGame(cfg, seed=2)
+    agents = [OracleAgent(p, g) if p % 2 else IndependentAgent(p, cfg) for p in g.players]
+    snaps = {}
+    result = run_game(g, agents, max_ticks=120,
+                      on_tick=lambda game, ev: snaps.__setitem__(game.tick, game.snapshot()))
+    meta, frames = build_frames(result.log.events)
+    assert meta["game"] == "dungeon"
+    assert len(frames) == result.ticks + 1
+    for frame in frames[1:]:
+        snap = snaps[frame["tick"]]
+        for key, m in snap["monsters"].items():
+            f = frame["monsters"][key]
+            assert (f["hp"], f["alive"]) == (m["hp"], m["alive"]), (frame["tick"], key)
+            assert f["stacks"] == {int(p): s for p, s in m["stacks"].items()}
+        for pid, p in snap["players"].items():
+            assert frame["players"][pid] == p, (frame["tick"], pid)
+    assert any(f["fires"] for f in frames)

@@ -71,3 +71,18 @@ def test_live_game_streams_frames_and_saves_log(server):
     assert data["frames"][-1]["tick"] == 40
     assert data["error"] is None
     assert list((runs_dir / "live").glob("*.jsonl"))
+
+
+def test_live_dungeon_game(server):
+    base, _ = server
+    post(base + "/api/live", {"game": "dungeon", "policy": "oracle", "players": 8, "rooms": 4,
+                              "comms": "hypergraph", "max_ticks": 15})
+    deadline = time.time() + 20
+    while time.time() < deadline:
+        data = get(base + "/api/live?since=0")
+        if not data["running"] and data["total"]:
+            break
+        time.sleep(0.1)
+    assert data["error"] is None
+    assert data["meta"]["game"] == "dungeon" and data["meta"]["comms"] == "hypergraph"
+    assert data["frames"][-1]["tick"] == 15

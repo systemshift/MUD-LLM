@@ -21,7 +21,7 @@ benchmark). The codebase is now being rewritten around that goal.
 | 1 | Deterministic tick-based simulation, Bomberman port, event logs | done |
 | 2 | Controller (intents, pathfinding), event-driven agent runtime, simulated clock | done |
 | 3 | Viewer: live stream and replay from event logs | done |
-| 4 | Multiplayer, comms layer (broadcast / spatial / team / hypergraph / vector), dungeon game | |
+| 4 | Multiplayer, comms layer (broadcast / spatial / team / hypergraph / vector), dungeon game | done |
 | 5 | First experiment: broadcast vs hyperedges as N grows | |
 
 ## Layout
@@ -29,9 +29,10 @@ benchmark). The codebase is now being rewritten around that goal.
 ```
 mudllm/
 ├── sim/          game-agnostic primitives: events, geometry
-├── games/        game rules and text views (bomberman; dungeon coming)
-├── control/      fast layer: intents -> one action per tick, time-aware pathfinding, dodge reflex
-├── agents/       slow layer: LLM intent agent, LLM primitive agent, greedy baseline
+├── games/        bomberman (grid, bombs, teams) and dungeon (shared monsters across rooms)
+├── control/      fast layer per game: intents -> one action per tick
+├── comms/        who hears whom: none, broadcast, team, spatial, hypergraph, vector routing
+├── agents/       slow layer: LLM order agents (shared base + per game), scripted baselines
 │   └── providers/   model adapters (OpenAI Responses API) with token/cost tracking
 ├── policies/     scripted primitive-action baseline (BFS)
 ├── loop.py       event-driven multi-agent loop on a simulated clock
@@ -46,6 +47,18 @@ calls; the controller executes them tick by tick and reports each order's
 outcome back as the tool result. Agents wake when their orders finish or fail,
 and each decision can cost simulated ticks (`--think-ticks`) or real latency
 (`--tick-rate`), so slow thinking has a price that doesn't depend on API jitter.
+
+## The dungeon (coordination testbed)
+
+Rooms sit on a ring; each monster spans several rooms (a natural hyperedge) and
+has one shared HP pool that regenerates every tick. Ice stacks are visible only
+in the room they were applied in, and fire deals `base * 3^k` for k distinct
+stacks, so damage comes from several players icing the same monster at the same
+moment and one firing right after. Rooms hold at most 3 players and monsters
+take several max-size bursts, so teams have to re-synchronize across rooms they
+can't see into. Defaults: 8 rooms, 16 players, 4 monsters. Scripted brackets:
+`independent` (no coordination) kills 0-1 monsters in 300 ticks; `oracle`
+(cheats with full state) clears all in ~160.
 
 ## Usage
 
@@ -62,7 +75,14 @@ mudllm bench --policy llm-intent --model gpt-6-astra                   # LLM giv
 mudllm bench --policy llm-intent --think-ticks 20                      # thinking costs 20 ticks
 mudllm bench --policy llm-primitive --model gpt-6-astra                # LLM presses every key
 
-mudllm view                              # http://127.0.0.1:8000
+mudllm bench --policy llm-intent --players 4 --teams 1,1,2,2 --comms team
+
+mudllm dungeon --policy independent                                    # scripted bracket
+mudllm dungeon --policy oracle
+mudllm dungeon --policy llm --comms hypergraph --rooms 4 --players 8   # Astra team
+mudllm dungeon --policy llm --comms vector --embedder openai
+
+mudllm view                              # http://127.0.0.1:8765
 ```
 
 The viewer replays any JSONL log under `runs/` (scrub, step, speed, orders feed
