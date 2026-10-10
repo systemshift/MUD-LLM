@@ -24,13 +24,16 @@ class GameEngine:
     """Main game engine managing all game logic."""
 
     def __init__(self, num_players: int = 1, width: int = BOARD_WIDTH,
-                 height: int = BOARD_HEIGHT):
-        self.board = Board(width, height)
+                 height: int = BOARD_HEIGHT, seed: Optional[int] = None):
+        self.seed = seed
+        self.board = Board(width, height, seed)
         self.num_players = min(num_players, 4)
         self.players: Dict[int, Player] = {}
         self.bombs: List[Bomb] = []
         self.move_count = 0
         self.game_over = False
+        self.initial_stones = self.board.count_stones()
+        self.hits: Dict[int, int] = {}
 
         # Initialize players
         self._init_players()
@@ -43,22 +46,23 @@ class GameEngine:
             self.players[player.id] = player
 
     def move_player(self, player_id: int, direction: str) -> bool:
-        """Move a player. Returns success."""
-        if player_id not in self.players:
+        """Move a player. Returns success.
+
+        Time advances even when the move is blocked, so bumping into a
+        wall doesn't freeze bomb timers.
+        """
+        if player_id not in self.players or self.game_over:
             return False
 
         player = self.players[player_id]
         success = player.move(direction, self.board)
-
-        if success:
-            self.move_count += 1
-            self._update_bombs()
+        self._tick()
 
         return success
 
     def place_bomb(self, player_id: int) -> bool:
         """Place a bomb at player's position. Returns success."""
-        if player_id not in self.players:
+        if player_id not in self.players or self.game_over:
             return False
 
         player = self.players[player_id]
@@ -68,16 +72,22 @@ class GameEngine:
         # Check if bomb already exists at position
         for bomb in self.bombs:
             if bomb.x == player.x and bomb.y == player.y:
+                self._tick()
                 return False
 
         # Create bomb
         bomb = Bomb(player.x, player.y, player_id)
         self.bombs.append(bomb)
-
-        self.move_count += 1
-        self._update_bombs()
+        self._tick()
 
         return True
+
+    def _tick(self):
+        """Advance game time by one action."""
+        self.move_count += 1
+        self._update_bombs()
+        if self.board.count_stones() == 0 and not self.bombs:
+            self.game_over = True
 
     def _update_bombs(self):
         """Update all bomb timers and trigger explosions."""
@@ -133,6 +143,7 @@ class GameEngine:
         for player in self.players.values():
             if player.alive and player.x == x and player.y == y:
                 player.add_score(EXPLOSION_HIT_PENALTY)
+                self.hits[player.id] = self.hits.get(player.id, 0) + 1
 
     def get_state_string(self) -> str:
         """Get board state as string with players and bombs."""
@@ -153,6 +164,14 @@ class GameEngine:
 
         return '\n'.join([''.join(row) for row in state])
 
+    def get_bombs_info(self) -> str:
+        """Describe active bombs and their fuses (bombs under players are hidden on the board)."""
+        if not self.bombs:
+            return "Active bombs: none"
+        parts = [f"row {b.y}, col {b.x} (P{b.owner_id}, explodes after {BOMB_TIMER + 1 - b.timer} more action(s))"
+                 for b in self.bombs]
+        return "Active bombs: " + "; ".join(parts)
+
     def get_player_info(self, player_id: int) -> Optional[Dict]:
         """Get info for specific player."""
         if player_id not in self.players:
@@ -171,7 +190,8 @@ class GameEngine:
         """Get game info string."""
         if player_id and player_id in self.players:
             p = self.players[player_id]
-            return f"Move: {self.move_count}, Player {player_id} - Score: {p.score}, Position: ({p.x}, {p.y})"
+            return (f"Move: {self.move_count}, Player {player_id} - Score: {p.score}, "
+                    f"Position: row {p.y}, col {p.x}\n{self.get_bombs_info()}")
 
         # All players
         scores = [f"P{pid}:{p.score}" for pid, p in self.players.items()]
@@ -183,4 +203,4 @@ class GameEngine:
 
     def reset(self):
         """Reset game state."""
-        self.__init__(self.num_players, self.board.width, self.board.height)
+        self.__init__(self.num_players, self.board.width, self.board.height, self.seed)

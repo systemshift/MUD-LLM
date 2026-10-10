@@ -3,17 +3,18 @@ Core Bomberman Game Components
 Clean implementation of Board and Player classes
 """
 import random
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 from ..config import STONE_PROBABILITY
 
 
 class Board:
     """Game board with walls, stones, and bombs."""
 
-    def __init__(self, width: int, height: int):
+    def __init__(self, width: int, height: int, seed: Optional[int] = None):
         # Ensure odd dimensions for proper wall grid
         self.width = width if width % 2 == 1 else width + 1
         self.height = height if height % 2 == 1 else height + 1
+        self.rng = random.Random(seed)
         self.grid = self._create_grid()
 
     def _create_grid(self) -> List[List[str]]:
@@ -34,7 +35,7 @@ class Board:
         # Random breakable stones
         for i in range(1, self.height - 1):
             for j in range(1, self.width - 1):
-                if grid[i][j] == ' ' and random.random() < STONE_PROBABILITY:
+                if grid[i][j] == ' ' and self.rng.random() < STONE_PROBABILITY:
                     grid[i][j] = 'S'
 
         # Clear spawn areas (4 corners, 3x3 each)
@@ -79,6 +80,10 @@ class Board:
         if self.is_valid_position(x, y):
             return self.grid[y][x]
         return '#'
+
+    def count_stones(self) -> int:
+        """Count remaining breakable stones."""
+        return sum(row.count('S') for row in self.grid)
 
     def to_string(self) -> str:
         """Convert board to string representation."""

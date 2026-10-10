@@ -3,107 +3,82 @@ Prompt Templates for LLM Agents
 Centralized prompt management
 """
 
+from ..config import BOMB_TIMER, BOMB_RANGE, STONE_DESTROY_POINTS, EXPLOSION_HIT_PENALTY, MOVES_PER_PLAN
 
-SYSTEM_PROMPT = """You are an expert AI agent playing Bomberman. Think strategically and CAREFULLY about positions.
+ACTIONS = ["up", "down", "left", "right", "bomb", "pass"]
 
-COORDINATE SYSTEM (CRITICAL):
-- Board uses (row, column) indexing where row=Y, column=X
-- 'up' decreases row (Y), 'down' increases row (Y)
-- 'left' decreases column (X), 'right' increases column (X)
-- Your position (Y, X) means: Y rows down from top, X columns right from left
+SYSTEM_PROMPT = f"""You are playing a turn-based Bomberman game. Your goal is to destroy every breakable stone as efficiently as possible without getting caught in your own explosions.
 
-GAME SYMBOLS:
-- '#' = Indestructible wall (CANNOT move through)
-- 'S' = Breakable stone (target, but CANNOT move through until destroyed)
-- ' ' = Empty space (CAN move here)
-- 'P' or '1'/'2'/'3'/'4' = Player positions
-- 'B' = Active bomb (DANGER! Will explode in 3 moves)
+BOARD
+- Grid cells are addressed as (row, col). Row 0 is the top, col 0 is the left.
+- 'up' = row-1, 'down' = row+1, 'left' = col-1, 'right' = col+1.
+- '#' indestructible wall, 'S' breakable stone, ' ' empty floor, 'B' bomb, 'P' or a digit = player.
+- You can only step onto empty floor (bombs do not block movement). Moving into '#' or 'S' fails and wastes the action.
+- A bomb you are standing on is hidden under your 'P'; the "Active bombs" line always lists every bomb.
 
-MOVEMENT RULES:
-- You can ONLY move into spaces marked ' ' (empty)
-- You CANNOT move through '#' walls or 'S' stones
-- ALWAYS verify your next move is into an empty ' ' space
+TIME
+- Every action you take (move, bomb, pass, or a failed move) advances the clock by exactly one tick.
 
-BOMB MECHANICS:
-1. Bombs explode after EXACTLY 3 moves in a PLUS (+) pattern
-2. Explosion extends 2 cells in all 4 directions (up/down/left/right)
-3. Walls '#' block explosions, stones 'S' are destroyed by explosions
-4. Getting hit by explosion = -50 points (VERY BAD)
-5. Destroying a stone = +10 points
+BOMBS
+- 'bomb' places a bomb on your current cell. You may have several bombs out at once.
+- A bomb explodes at the end of the {BOMB_TIMER}rd action AFTER the one that placed it.
+  Example: bomb, a1, a2, a3 -> the explosion happens right after a3 resolves. Wherever you stand after a3 must be safe.
+- The explosion hits the bomb's cell and extends {BOMB_RANGE} cells up, down, left and right.
+  '#' stops a ray. 'S' is destroyed and also stops that ray. Rays do not turn corners.
+- Each stone destroyed: +{STONE_DESTROY_POINTS}. Standing in any explosion cell when it goes off: {EXPLOSION_HIT_PENALTY}.
 
-CRITICAL SAFETY RULES:
-- After placing bomb, you MUST move at least 3 spaces away within 3 moves
-- Count moves carefully: move 1, move 2, move 3 = BOOM!
-- Don't place bomb if you're surrounded by walls/stones with no escape
-- If there's an active bomb 'B', calculate if you're in danger zone
+PLANNING
+- Submit a plan of 1 to {MOVES_PER_PLAN} actions via make_moves. They run in order, then you get the new board and plan again.
+- If any action fails, the rest of the plan is discarded and you replan from the new state, so short precise plans beat long guesses.
+- Before submitting, trace your plan cell by cell on the grid: confirm every step lands on empty floor and that you are out of every blast zone when each bomb goes off.
+- Avoid 'pass' unless you are deliberately waiting in a safe cell for a bomb to clear a path."""
 
-STRATEGY:
-- Identify nearest accessible stone (reachable through empty spaces)
-- Navigate to position next to stone
-- Place bomb, then IMMEDIATELY retreat 3+ moves
-- Only use 'pass' if waiting for explosion is strategically necessary"""
+
+def format_board(game_state: str) -> str:
+    """Render the board with row/col indices so coordinates can be read off directly."""
+    rows = game_state.strip('\n').split('\n')
+    width = max(len(r) for r in rows)
+    tens = "     " + "".join(str(c // 10) if c >= 10 else " " for c in range(width))
+    ones = "     " + "".join(str(c % 10) for c in range(width))
+    body = [f"{r:>3}  {row}" for r, row in enumerate(rows)]
+    return "\n".join([tens, ones] + body)
 
 
 def get_user_prompt(game_state: str, game_info: str, player_pos: tuple,
-                    surroundings: str, valid_moves: list, stones_info: str,
-                    bombs_info: str, last_move: str) -> str:
+                    open_moves: list, last_result: str) -> str:
     """Generate user prompt for LLM."""
-    return f"""CURRENT GAME STATE:
-{game_state}
+    return f"""BOARD (row numbers on the left, column numbers on top):
+{format_board(game_state)}
 
-YOUR POSITION: Row {player_pos[1]}, Column {player_pos[0]}
+YOU: row {player_pos[1]}, col {player_pos[0]}
+{game_info}
+Directions open from your cell right now: {', '.join(open_moves) or 'none'}
+Last plan result: {last_result}
 
-IMMEDIATE SURROUNDINGS (3x3 around you):
-{surroundings}
-
-GAME INFO: {game_info}
-LAST MOVE: {last_move}
-
-ANALYSIS:
-- {stones_info}
-- {bombs_info}
-- Valid moves you can make: {', '.join(valid_moves)}
-
-IMPORTANT:
-- 'valid moves' list shows ONLY moves that lead to empty spaces ' '
-- If a direction is missing, that means there's a wall '#' or stone 'S' blocking
-- NEVER plan a move that's not in the valid moves list
-
-TASK: Plan your next 10 moves carefully:
-1. Look at your surroundings - which directions are open (empty ' ')?
-2. Where is the nearest stone you can reach through open spaces?
-3. Navigate there, place bomb, retreat to safety
-4. Verify each move goes to an empty space
-
-Use the make_moves function with your reasoning and 10 moves."""
+Plan your next actions and call make_moves."""
 
 
-def get_function_schema(valid_moves: list) -> dict:
-    """Get function calling schema for LLM."""
+def get_function_schema() -> dict:
+    """Responses API function tool definition."""
     return {
         "type": "function",
-        "function": {
-            "name": "make_moves",
-            "description": "Make a series of 10 strategic moves in the Bomberman game",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "reasoning": {
-                        "type": "string",
-                        "description": "Your strategic reasoning for the next 10 moves"
-                    },
-                    "moves": {
-                        "type": "array",
-                        "items": {
-                            "type": "string",
-                            "enum": valid_moves
-                        },
-                        "minItems": 10,
-                        "maxItems": 10,
-                        "description": "Exactly 10 moves to execute"
-                    }
+        "name": "make_moves",
+        "description": f"Submit the next 1-{MOVES_PER_PLAN} actions to execute in order.",
+        "strict": True,
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "reasoning": {
+                    "type": "string",
+                    "description": "Brief plan: target stone, bomb cell, escape cell."
                 },
-                "required": ["reasoning", "moves"]
-            }
+                "moves": {
+                    "type": "array",
+                    "items": {"type": "string", "enum": ACTIONS},
+                    "description": f"1 to {MOVES_PER_PLAN} actions, executed in order"
+                }
+            },
+            "required": ["reasoning", "moves"],
+            "additionalProperties": False
         }
     }

@@ -53,10 +53,13 @@ DEBUG_MODE = True
 # ============================================================================
 
 # LLM model to use for agents
-# Options: "gpt-5", "gpt-5-mini", "gpt-5-nano", "o4-mini", "gpt-4o-mini"
-LLM_MODEL = "gpt-5.5"
+# Any Responses API model, e.g. "gpt-6-astra", "gpt-6-sol", "gpt-5.5", "gpt-5-mini"
+LLM_MODEL = "gpt-6-astra"
 
-# Number of moves to plan ahead
+# Reasoning effort: "low", "medium", "high", "xhigh", "max" (gpt-6-astra has no "none")
+REASONING_EFFORT = "medium"
+
+# Maximum actions per plan (agents may submit fewer)
 MOVES_PER_PLAN = 10
 
 # Delay between moves (seconds) - for visualization

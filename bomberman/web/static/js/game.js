@@ -137,6 +137,10 @@ class GameController {
             this.addLog(`${data.agent} is thinking...`, 'thinking');
         });
 
+        this.socket.on('agent_plan', (data) => {
+            this.addLog(`${data.agent} plans [${data.moves.join(', ')}]: ${data.reasoning}`, 'thinking');
+        });
+
         this.socket.on('agent_move', (data) => {
             this.addLog(`${data.agent}: ${data.move}`, 'move');
         });

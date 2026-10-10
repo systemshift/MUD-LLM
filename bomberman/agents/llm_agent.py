@@ -4,82 +4,94 @@ Uses OpenAI API to play Bomberman
 """
 import os
 import json
+import time
 import numpy as np
 from typing import List, Tuple
 from openai import OpenAI
 from dotenv import load_dotenv
 
 from .base_agent import BaseAgent
-from .prompts import SYSTEM_PROMPT, get_user_prompt, get_function_schema
-from ..config import LLM_MODEL, MOVES_PER_PLAN
+from .prompts import SYSTEM_PROMPT, ACTIONS, get_user_prompt, get_function_schema
+from ..config import LLM_MODEL, MOVES_PER_PLAN, REASONING_EFFORT
 
 load_dotenv()
 
 
 class LLMAgent(BaseAgent):
-    """Agent that uses LLM (GPT/Claude) for decision making."""
+    """Agent that uses an OpenAI model (Responses API) for decision making."""
 
     def __init__(self, player_id: int, model: str = LLM_MODEL,
-                 server_url: str = "http://localhost:5000"):
+                 server_url: str = "http://localhost:5000",
+                 reasoning_effort: str = REASONING_EFFORT):
         super().__init__(player_id, server_url)
         self.model = model
+        self.reasoning_effort = reasoning_effort
         self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        self.last_move = "None"
+        self.last_result = "None (first turn)"
+        self.last_reasoning = ""
+        self.usage = {"calls": 0, "errors": 0, "input_tokens": 0,
+                      "cached_tokens": 0, "output_tokens": 0,
+                      "reasoning_tokens": 0, "latency_s": 0.0}
 
     def get_name(self) -> str:
         return f"LLM-{self.model}-P{self.player_id}"
 
+    def report_result(self, planned: List[str], executed: int, failed_move: str = None):
+        """Called by the runner after executing a plan, fed back on the next turn."""
+        if failed_move:
+            self.last_result = (f"{planned} -> executed {executed} action(s), then '{failed_move}' "
+                                f"FAILED (blocked); remaining actions discarded.")
+        else:
+            self.last_result = f"{planned} -> all {executed} action(s) executed."
+
     def decide_moves(self, game_state: str, game_info: str) -> List[str]:
         """Use LLM to decide next moves."""
-        # Parse game state
         game_array = self._parse_state(game_state)
         player_pos = self._get_player_position(game_array)
+        open_moves = [m for m in self._get_valid_moves(game_array, player_pos)
+                      if m not in ('bomb', 'pass')]
 
-        # Get game analysis
-        valid_moves = self._get_valid_moves(game_array, player_pos)
-        surroundings = self._get_surroundings(game_array, player_pos)
-        stones_info = self._get_stones_info(game_array, player_pos)
-        bombs_info = self._get_bombs_info(game_array, player_pos)
+        user_prompt = get_user_prompt(game_state, game_info, player_pos,
+                                      open_moves, self.last_result)
 
-        # Build prompts
-        user_prompt = get_user_prompt(
-            game_state, game_info, player_pos, surroundings,
-            valid_moves, stones_info, bombs_info, self.last_move
-        )
-
-        # Call LLM
         try:
-            response = self.client.chat.completions.create(
+            t0 = time.time()
+            response = self.client.responses.create(
                 model=self.model,
-                messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": user_prompt}
-                ],
-                tools=[get_function_schema(valid_moves)],
-                tool_choice={"type": "function", "function": {"name": "make_moves"}},
+                instructions=SYSTEM_PROMPT,
+                input=user_prompt,
+                tools=[get_function_schema()],
+                tool_choice={"type": "function", "name": "make_moves"},
+                reasoning={"effort": self.reasoning_effort},
             )
+            self._record_usage(response, time.time() - t0)
 
-            if response.choices[0].message.tool_calls:
-                tool_call = response.choices[0].message.tool_calls[0]
-                if tool_call.function.name == "make_moves":
-                    result = json.loads(tool_call.function.arguments)
-                    reasoning = result.get("reasoning", "No reasoning")
-                    moves = result.get("moves", [])
-
-                    print(f"\n💭 {self.get_name()} REASONING: {reasoning}")
-
-                    # Validate moves
-                    if len(moves) != MOVES_PER_PLAN:
-                        moves = (moves + ["pass"] * MOVES_PER_PLAN)[:MOVES_PER_PLAN]
-
-                    return moves
-
+            for item in response.output:
+                if item.type == "function_call" and item.name == "make_moves":
+                    result = json.loads(item.arguments)
+                    moves = [m for m in result.get("moves", []) if m in ACTIONS][:MOVES_PER_PLAN]
+                    self.last_reasoning = result.get('reasoning', '')
+                    print(f"\n💭 {self.get_name()} REASONING: {self.last_reasoning}")
+                    if moves:
+                        return moves
         except Exception as e:
+            self.usage["errors"] += 1
             print(f"❌ LLM Error for {self.get_name()}: {e}")
 
-        # Fallback: random valid moves
-        return [np.random.choice(valid_moves) if valid_moves else "pass"
-                for _ in range(MOVES_PER_PLAN)]
+        # Fallback: stay put this turn rather than wander randomly
+        return ["pass"]
+
+    def _record_usage(self, response, latency: float):
+        u = response.usage
+        self.usage["calls"] += 1
+        self.usage["latency_s"] += latency
+        if u:
+            self.usage["input_tokens"] += u.input_tokens
+            self.usage["output_tokens"] += u.output_tokens
+            if u.input_tokens_details:
+                self.usage["cached_tokens"] += u.input_tokens_details.cached_tokens or 0
+            if u.output_tokens_details:
+                self.usage["reasoning_tokens"] += u.output_tokens_details.reasoning_tokens or 0
 
     def _parse_state(self, state: str) -> np.ndarray:
         """Parse game state string to numpy array."""
@@ -103,49 +115,8 @@ class LLMAgent(BaseAgent):
         for direction, (dx, dy) in moves:
             nx, ny = x + dx, y + dy
             if 0 <= ny < state.shape[0] and 0 <= nx < state.shape[1]:
-                if state[ny, nx] in [' ', 'P', '1', '2', '3', '4']:
+                if state[ny, nx] in [' ', 'B', 'P', '1', '2', '3', '4']:
                     valid.append(direction)
 
         valid.extend(['bomb', 'pass'])
         return valid
-
-    def _get_surroundings(self, state: np.ndarray, pos: Tuple[int, int]) -> str:
-        """Get 3x3 surroundings as string."""
-        x, y = pos
-        lines = []
-
-        for dy in [-1, 0, 1]:
-            row = []
-            for dx in [-1, 0, 1]:
-                nx, ny = x + dx, y + dy
-                if 0 <= ny < state.shape[0] and 0 <= nx < state.shape[1]:
-                    cell = state[ny, nx]
-                    if dx == 0 and dy == 0:
-                        row.append('[P]')
-                    else:
-                        row.append(f'[{cell}]')
-                else:
-                    row.append('[#]')
-            lines.append(' '.join(row))
-
-        return '\n'.join(lines)
-
-    def _get_stones_info(self, state: np.ndarray, pos: Tuple[int, int]) -> str:
-        """Get information about stones."""
-        stones = np.where(state == 'S')
-        if len(stones[0]) == 0:
-            return "No breakable stones remaining."
-
-        x, y = pos
-        distances = [abs(sy - y) + abs(sx - x) for sy, sx in zip(stones[0], stones[1])]
-        return f"Total stones: {len(distances)}. Nearest stone is {min(distances)} moves away."
-
-    def _get_bombs_info(self, state: np.ndarray, pos: Tuple[int, int]) -> str:
-        """Get information about bombs."""
-        bombs = np.where(state == 'B')
-        if len(bombs[0]) == 0:
-            return "No active bombs."
-
-        x, y = pos
-        distances = [abs(by - y) + abs(bx - x) for by, bx in zip(bombs[0], bombs[1])]
-        return f"{len(distances)} active bomb(s). Nearest bomb is {min(distances)} moves away."

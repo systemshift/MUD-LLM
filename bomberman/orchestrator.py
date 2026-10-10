@@ -79,22 +79,26 @@ class GameOrchestrator:
         moves = agent.decide_moves(game_state, game_info)
         print(f"📋 Planned moves: {moves}")
 
-        # Execute moves sequentially
+        # Execute moves sequentially, abandoning the plan on the first failure
         executed = 0
+        failed_move = None
         for i, move in enumerate(moves, 1):
             print(f"  ▶️  Move {i}: {move}")
             success = self.execute_move(agent.player_id, move)
-
-            if success:
-                executed += 1
-                agent.move_count += 1
-            else:
-                print(f"     ❌ Failed")
-
             time.sleep(MOVE_DELAY)
+            if not success:
+                print(f"     ❌ Failed, replanning")
+                failed_move = move
+                break
+            executed += 1
+            agent.move_count += 1
+
+        if hasattr(agent, 'report_result'):
+            agent.report_result(moves, executed, failed_move)
 
         print(f"✅ Executed {executed}/{len(moves)} moves")
-        return executed
+        # Failed actions still consume a game tick
+        return executed + (1 if failed_move else 0)
 
     def run_single_player(self, agent: BaseAgent, max_moves: int = 100):
         """Run single agent game."""

@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from bomberman.core.engine import GameEngine
 from bomberman.agents.llm_agent import LLMAgent
 from bomberman.orchestrator import GameOrchestrator
-from bomberman.config import SERVER_HOST, SERVER_PORT
+from bomberman.config import SERVER_HOST, SERVER_PORT, LLM_MODEL
 
 app = Flask(__name__,
             template_folder='templates',
@@ -58,7 +58,7 @@ def handle_start_game(data):
 
     num_players = data.get('num_players', 1)
     board_size = data.get('board_size', 15)
-    ai_model = data.get('ai_model', 'gpt-5')
+    ai_model = data.get('ai_model', LLM_MODEL)
 
     # Create game engine
     game_engine = GameEngine(num_players, board_size, board_size)
@@ -132,10 +132,10 @@ def run_game_loop():
     """Main game loop running in background thread."""
     global game_running, game_paused, game_engine, orchestrator
 
-    max_moves = 200
+    max_moves = 500
     move_delay = 0.15
 
-    while game_running and game_engine.move_count < max_moves:
+    while game_running and not game_engine.game_over and game_engine.move_count < max_moves:
         if game_paused:
             time.sleep(0.5)
             continue
@@ -159,17 +159,25 @@ def run_game_loop():
 
             # Agent decides moves
             moves = agent.decide_moves(game_state, game_info)
+            socketio.emit('agent_plan', {
+                'agent': agent.get_name(),
+                'player_id': player_id,
+                'moves': moves,
+                'reasoning': getattr(agent, 'last_reasoning', '')
+            })
 
-            # Execute moves
-            for move in moves[:10]:  # Limit to 10 moves
-                if not game_running or game_paused:
+            # Execute moves, abandoning the plan on the first failure
+            executed = 0
+            failed_move = None
+            for move in moves:
+                if not game_running or game_paused or game_engine.game_over:
                     break
 
                 # Execute move
                 if move == 'bomb':
-                    game_engine.place_bomb(player_id)
+                    success = game_engine.place_bomb(player_id)
                 else:
-                    game_engine.move_player(player_id, move)
+                    success = game_engine.move_player(player_id, move)
 
                 # Emit move event
                 socketio.emit('agent_move', {
@@ -184,13 +192,30 @@ def run_game_loop():
                 # Delay based on speed
                 time.sleep(move_delay * speed_multiplier)
 
+                if not success:
+                    failed_move = move
+                    break
+                executed += 1
+
+            agent.report_result(moves, executed, failed_move)
+
     # Game over
     if game_engine:
         final_scores = {pid: p.score for pid, p in game_engine.players.items()}
         winner = max(final_scores, key=final_scores.get)
+        stones = f"{game_engine.initial_stones - game_engine.board.count_stones()}/{game_engine.initial_stones} stones"
+
+        if game_engine.game_over:
+            message = f'Board cleared in {game_engine.move_count} actions ({stones}). '
+        else:
+            message = f'Stopped after {game_engine.move_count} actions ({stones}). '
+        if len(final_scores) > 1:
+            message += f'Player {winner} wins with {final_scores[winner]} points!'
+        else:
+            message += f'Score: {final_scores[winner]}'
 
         socketio.emit('game_over', {
-            'message': f'Player {winner} wins with {final_scores[winner]} points!',
+            'message': message,
             'scores': final_scores
         })
 

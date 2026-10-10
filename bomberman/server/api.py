@@ -3,14 +3,9 @@ Flask REST API Server
 Clean HTTP interface for game engine
 """
 from flask import Flask, jsonify, request
-import sys
-import os
 
-# Add parent directory to path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from core.engine import GameEngine
-from config import SERVER_HOST, SERVER_PORT, DEBUG_MODE, NUM_PLAYERS, BOARD_WIDTH, BOARD_HEIGHT
+from ..core.engine import GameEngine
+from ..config import SERVER_HOST, SERVER_PORT, DEBUG_MODE, NUM_PLAYERS, BOARD_WIDTH, BOARD_HEIGHT
 
 app = Flask(__name__)
 game: GameEngine = None
@@ -85,7 +80,9 @@ def state():
         'game_state': game.get_state_string(),
         'game_info': game.get_game_info(),
         'all_players': game.get_all_players_info(),
-        'move_count': game.move_count
+        'move_count': game.move_count,
+        'game_over': game.game_over,
+        'stones_remaining': game.board.count_stones()
     })
 
 
@@ -103,7 +100,9 @@ def player_state(player_id):
         'game_state': game.get_state_string(),
         'game_info': game.get_game_info(player_id),
         'player_info': game.get_player_info(player_id),
-        'debug_info': f"Player {player_id} at ({player.x}, {player.y})"
+        'debug_info': f"Player {player_id} at ({player.x}, {player.y})",
+        'game_over': game.game_over,
+        'stones_remaining': game.board.count_stones()
     })
 
 
