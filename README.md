@@ -19,7 +19,7 @@ benchmark). The codebase is now being rewritten around that goal.
 | Step | | |
 |---|---|---|
 | 1 | Deterministic tick-based simulation, Bomberman port, event logs | done |
-| 2 | Controller (intents, pathfinding), event-driven agent runtime, simulated clock | |
+| 2 | Controller (intents, pathfinding), event-driven agent runtime, simulated clock | done |
 | 3 | Viewer: live stream and replay from event logs | |
 | 4 | Multiplayer, comms layer (broadcast / spatial / team / hypergraph / vector), dungeon game | |
 | 5 | First experiment: broadcast vs hyperedges as N grows | |
@@ -29,11 +29,21 @@ benchmark). The codebase is now being rewritten around that goal.
 ```
 mudllm/
 ├── sim/          game-agnostic primitives: events, geometry
-├── games/        game rules (bomberman; dungeon coming)
-├── policies/     scripted baselines (LLM policies coming)
+├── games/        game rules and text views (bomberman; dungeon coming)
+├── control/      fast layer: intents -> one action per tick, time-aware pathfinding, dodge reflex
+├── agents/       slow layer: LLM intent agent, LLM primitive agent, greedy baseline
+│   └── providers/   model adapters (OpenAI Responses API) with token/cost tracking
+├── policies/     scripted primitive-action baseline (BFS)
+├── loop.py       event-driven multi-agent loop on a simulated clock
 ├── runner.py     solo plan-execute loop (primitive-action benchmark)
 └── cli.py        mudllm command
 ```
+
+Agents don't press keys. They issue orders (`bomb_at`, `goto`, `wait`) as tool
+calls; the controller executes them tick by tick and reports each order's
+outcome back as the tool result. Agents wake when their orders finish or fail,
+and each decision can cost simulated ticks (`--think-ticks`) or real latency
+(`--tick-rate`), so slow thinking has a price that doesn't depend on API jitter.
 
 ## Usage
 
@@ -44,6 +54,11 @@ pip install -e ".[dev]"
 pytest                                   # rule tests + baseline parity
 mudllm bench --policy bfs --seeds 1 2 3  # scripted baseline
 mudllm bench --log-dir runs/             # also write JSONL event logs
+
+# needs OPENAI_API_KEY in .env
+mudllm bench --policy llm-intent --model gpt-6-astra                   # LLM gives orders
+mudllm bench --policy llm-intent --think-ticks 20                      # thinking costs 20 ticks
+mudllm bench --policy llm-primitive --model gpt-6-astra                # LLM presses every key
 ```
 
 ## History
