@@ -16,7 +16,9 @@ class OpenAIProvider:
         load_dotenv()
         self.model = model
         self.reasoning_effort = reasoning_effort
-        self.client = client or OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        # generous retries: big runs fire many concurrent calls, and a failed call would
+        # leave an agent idle and bias results against larger teams
+        self.client = client or OpenAI(api_key=os.getenv("OPENAI_API_KEY"), max_retries=8)
 
     def complete(self, instructions: str, input_items: list[dict[str, Any]],
                  tools: list[dict[str, Any]], previous_response_id: str | None = None,

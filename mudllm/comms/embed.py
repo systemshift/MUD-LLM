@@ -44,11 +44,16 @@ class OpenAIEmbedder:
 
         load_dotenv()
         self.model = model
-        self.client = client or OpenAI()
+        self.client = client or OpenAI(max_retries=8)
+        self.lock = __import__("threading").Lock()
         self.cache: dict[str, list[float]] = {}
         self.tokens = 0
 
     def embed(self, texts: list[str]) -> list[list[float]]:
+        with self.lock:
+            return self._embed(texts)
+
+    def _embed(self, texts: list[str]) -> list[list[float]]:
         missing = [t for t in dict.fromkeys(texts) if t not in self.cache]
         if missing:
             response = self.client.embeddings.create(model=self.model, input=missing)

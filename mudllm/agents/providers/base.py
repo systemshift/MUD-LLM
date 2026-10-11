@@ -7,6 +7,8 @@ from typing import Any
 PRICING: dict[str, tuple[float, float, float]] = {
     # cached rate unpublished; billed as full input to stay conservative
     "gpt-6-astra": (10.0, 10.0, 50.0),
+    "gpt-6.1-sol": (2.0, 2.0, 10.0),
+    "gpt-6-luna": (0.10, 0.10, 0.50),
 }
 
 
