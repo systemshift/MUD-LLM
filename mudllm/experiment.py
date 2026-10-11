@@ -143,8 +143,10 @@ def run_grid(args):
             if row.get("stopped") is None:  # budget-stopped cells are retried
                 done.add(row["cell"])
 
-    # size-major, then seed, then comms: if the budget runs out, finished sizes are complete
-    cells = [(n, c, s) for n in args.sizes for s in args.seeds for c in args.comms
+    # size-major, then seed, then comms with broadcast last (it's the expensive mode),
+    # so if the budget runs out the cheaper modes at each size are complete
+    comms_order = sorted(args.comms, key=lambda c: c == "broadcast")
+    cells = [(n, c, s) for n in args.sizes for s in args.seeds for c in comms_order
              if cell_key(n, c, s) not in done]
     budget = Budget(args.budget, args.model)
     print(f"{len(cells)} cell(s) to run, {len(done)} already done; budget ${args.budget:.2f}")

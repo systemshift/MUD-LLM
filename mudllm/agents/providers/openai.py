@@ -8,7 +8,7 @@ from typing import Any
 from dotenv import load_dotenv
 from openai import OpenAI
 
-from .base import Completion, ToolCall, Usage
+from .base import Completion, ToolCall, Usage, call_cost
 
 
 class OpenAIProvider:
@@ -47,6 +47,8 @@ class OpenAIProvider:
                 usage.cached_tokens = u.input_tokens_details.cached_tokens or 0
             if u.output_tokens_details:
                 usage.reasoning_tokens = u.output_tokens_details.reasoning_tokens or 0
+            usage.cost_usd = call_cost(self.model, usage.input_tokens, usage.cached_tokens,
+                                       usage.output_tokens)
 
         calls = [ToolCall(item.call_id, item.name, json.loads(item.arguments or "{}"))
                  for item in response.output if item.type == "function_call"]

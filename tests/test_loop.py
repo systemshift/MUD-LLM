@@ -186,3 +186,14 @@ def test_llm_agent_sees_inbox():
                     channels=["team"], comms_info="Team chat.")
     agent.decide(BombermanGame(CFG, seed=1).observe(1), report)
     assert "P2 on team: help at row 5" in provider.requests[-1]["items"][-1]["content"]
+
+
+def test_call_cost_uses_cached_and_long_context_rates():
+    from mudllm.agents.providers.base import call_cost
+    # 200k input of which 180k cached, 10k output on luna (short-context rates)
+    assert call_cost("gpt-6-luna", 200_000, 180_000, 10_000) == pytest.approx(
+        (20_000 * 0.125 + 180_000 * 0.01 + 10_000 * 0.5) / 1e6)
+    short = call_cost("gpt-6-luna", 272_000, 0, 0)
+    long = call_cost("gpt-6-luna", 272_001, 0, 0)
+    assert long > 1.9 * short
+    assert call_cost("unknown-model", 1000, 0, 1000) == 0.0
