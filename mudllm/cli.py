@@ -231,7 +231,8 @@ def main():
     exp.add_argument("--effort", default="low")
     exp.add_argument("--embedder", default="hash", choices=["hash", "openai"])
     exp.add_argument("--think-ticks", type=int, default=0)
-    exp.add_argument("--max-ticks", type=int, default=150)
+    exp.add_argument("--max-ticks", type=int, default=None,
+                     help="time limit (default per env: dungeon 250, others 150)")
     exp.add_argument("--heartbeat", type=int, default=10,
                      help="every agent also decides at least this often")
     exp.add_argument("--inbox-cap", type=int, default=40)

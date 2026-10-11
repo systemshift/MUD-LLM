@@ -206,11 +206,12 @@ class LLMOrderAgent:
                     "additionalProperties": False,
                 },
             }
-            props["keep_current_orders"] = {
-                "type": "boolean",
-                "description": "true: queue these orders after your current ones instead of "
-                               "replacing them (e.g. when only replying to a message)",
-            }
+        # always offered (not only with comms) so no condition is disadvantaged
+        props["keep_current_orders"] = {
+            "type": "boolean",
+            "description": "true: keep your current orders and queue these after them; "
+                           "false: replace them",
+        }
         if "auto" in channels:
             props["focus"] = {"type": "string",
                               "description": "a few words on what you are working on; "

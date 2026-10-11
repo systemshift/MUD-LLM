@@ -12,7 +12,7 @@ OracleAgent       perfect coordination by cheating: reads the true game state,
 
 from ..control import Intent
 from ..games.dungeon import DungeonConfig, DungeonGame, DungeonObservation
-from .base import Report
+from .base import Decision, Report
 from .providers import Usage
 
 
@@ -24,7 +24,9 @@ class IndependentAgent:
         self.usage = Usage()
         self.last_orders: list[str] = []
 
-    def decide(self, obs: DungeonObservation, report: Report) -> list[Intent]:
+    def decide(self, obs: DungeonObservation, report: Report) -> list[Intent] | Decision:
+        if report.reason.startswith("periodic check-in"):
+            return Decision([], replace=False)  # keep running orders on heartbeats
         alive = [m for m in obs.monsters_here if m["alive"]]
         if not alive:  # walk to the nearest room with a living monster
             target = _nearest_room_with_monster(obs)
@@ -63,7 +65,9 @@ class OracleAgent:
                 groups[min(options, key=lambda k: (len(groups[k]), k))].append(p.id)
         return groups
 
-    def decide(self, obs: DungeonObservation, report: Report) -> list[Intent]:
+    def decide(self, obs: DungeonObservation, report: Report) -> list[Intent] | Decision:
+        if report.reason.startswith("periodic check-in"):
+            return Decision([], replace=False)  # keep running orders on heartbeats
         groups = self.groups()
         mine = next((k for k, members in groups.items() if self.player_id in members), None)
         if mine is None:

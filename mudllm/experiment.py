@@ -31,6 +31,12 @@ from .comms import PerTeam, make_router
 from .loop import Clock, run_game
 
 ENVIRONMENTS = ("dungeon", "quest", "bomber", "versus")
+# per-environment time limits (the dungeon's 4000-HP monsters take longer)
+DEFAULT_MAX_TICKS = {"dungeon": 250, "quest": 150, "bomber": 150, "versus": 150}
+
+
+def max_ticks_for(env: str, args) -> int:
+    return args.max_ticks or DEFAULT_MAX_TICKS[env]
 
 
 @dataclass
@@ -179,7 +185,8 @@ def run_cell(env: str, size: int, comms: str, seed: int, args, budget: Budget,
         return False
 
     t0 = time.time()
-    result = run_game(game, agents, Clock(think_ticks=args.think_ticks), max_ticks=args.max_ticks,
+    max_ticks = max_ticks_for(env, args)
+    result = run_game(game, agents, Clock(think_ticks=args.think_ticks), max_ticks=max_ticks,
                       comms=router, wake_on_message=False, heartbeat=args.heartbeat,
                       inbox_cap=args.inbox_cap, should_stop=should_stop)
     usage = spend()
@@ -195,10 +202,10 @@ def run_cell(env: str, size: int, comms: str, seed: int, args, budget: Budget,
     return {
         "cell": key, "env": env, "size": size, "comms": comms, "seed": seed,
         "policy": policy, "model": args.model if policy == "llm" else None,
-        "think_ticks": args.think_ticks, "max_ticks": args.max_ticks,
+        "think_ticks": args.think_ticks, "max_ticks": max_ticks,
         "heartbeat": args.heartbeat, "inbox_cap": args.inbox_cap, "memory": args.memory,
         "stopped": stopped["reason"], "ticks": result.ticks,
-        "score": primary_score(env, game, result, args.max_ticks),
+        "score": primary_score(env, game, result, max_ticks),
         **env_details(env, game, result),
         "messages": c["sent"], "deliveries": c["deliveries"], "dropped": c.get("dropped", 0),
         "delivered_chars": c["delivered_chars"],

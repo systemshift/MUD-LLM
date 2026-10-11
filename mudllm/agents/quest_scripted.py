@@ -10,7 +10,7 @@ OracleAgent   cheating coordinator: one shared planner reads the full game state
 
 from ..control import Intent
 from ..games.quest import QuestGame, QuestObservation
-from .base import Report
+from .base import Decision, Report
 from .providers import Usage
 
 PERFORM = 15
@@ -52,7 +52,9 @@ class LocalAgent:
         self.last_orders: list[str] = []
         self.rng = __import__("random").Random(player_id * 7919 + (game.seed or 0))
 
-    def decide(self, obs: QuestObservation, report: Report) -> list[Intent]:
+    def decide(self, obs: QuestObservation, report: Report) -> list[Intent] | Decision:
+        if report.reason.startswith("periodic check-in"):
+            return Decision([], replace=False)  # keep running orders on heartbeats
         if obs.inventory:  # deliver a key we carry
             item = obs.inventory[0]
             self.last_orders = [f"deliver key to {item['vault_zone_name']}"]
@@ -143,7 +145,9 @@ class OracleAgent:
         self.usage = Usage()
         self.last_orders: list[str] = []
 
-    def decide(self, obs: QuestObservation, report: Report) -> list[Intent]:
+    def decide(self, obs: QuestObservation, report: Report) -> list[Intent] | Decision:
+        if report.reason.startswith("periodic check-in"):
+            return Decision([], replace=False)  # keep running orders on heartbeats
         job = self.planner.assignments().get(self.player_id)
         if job is None:
             self.last_orders = ["idle"]

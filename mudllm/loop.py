@@ -23,6 +23,8 @@ from .control import Controller, Intent
 from .sim import Event, EventLog
 
 LAST_ORDER_STARTED = "your last order is in progress; orders you give now run after it"
+HEARTBEAT = ("periodic check-in; your current orders are still running (set "
+             "keep_current_orders to keep them and queue any new ones after)")
 NEW_MESSAGES = "new messages"
 
 
@@ -293,7 +295,7 @@ def _wake_reason(s: _Slot, tick: int, heartbeat: int | None, prefetch: bool,
     if wake_on_message and s.inbox and tick - s.last_decision >= message_cooldown:
         return NEW_MESSAGES
     if heartbeat and tick - s.last_decision >= heartbeat:
-        return "heartbeat"
+        return HEARTBEAT
     return None
 
 

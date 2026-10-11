@@ -124,3 +124,27 @@ def test_inbox_content_only_reaches_prompt_through_messages():
     assert secret in provider.requests[0]["items"][-1]["content"]
     agent.decide(game.observe(agent.player_id), Report("heartbeat"))
     assert secret not in provider.requests[1]["items"][-1]["content"].split("YOUR RECENT")[0]
+
+
+def test_heartbeats_do_not_cancel_scheduled_orders():
+    from mudllm.agents.dungeon_scripted import OracleAgent
+    from mudllm.games.dungeon import DungeonConfig, DungeonGame
+    from mudllm.loop import run_game
+    g = DungeonGame(DungeonConfig(num_rooms=8, num_players=16), seed=1)
+    result = run_game(g, [OracleAgent(p, g) for p in g.players], max_ticks=60, heartbeat=10,
+                      wake_on_message=False)
+    assert result.log.of_kind("fire")  # fires scheduled across heartbeat ticks still happen
+
+
+@pytest.mark.parametrize("comms", ["none", "broadcast", "self-organized"])
+def test_keep_current_orders_offered_in_every_condition(comms):
+    a = args(policy="llm")
+    game, agents = build("quest", 16, 1, "llm", a)
+    agent, provider = agents[0], Fake()
+    agent.provider = provider
+    router = router_for(comms, 1, a, team_scope=False)
+    agent.decide(game.observe(agent.player_id),
+                 Report("start", channels=router.channels(agent.player_id, game),
+                        comms_info=router.describe(),
+                        can_manage_channels=getattr(router, "manages_channels", False)))
+    assert "keep_current_orders" in provider.requests[0]["tools"][0]["parameters"]["properties"]

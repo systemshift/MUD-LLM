@@ -6,7 +6,7 @@ from ..control import Intent
 from ..control.bomberman import blast, cell_at, walkable
 from ..games.bomberman import BombermanConfig, Observation
 from ..sim import DIRECTIONS, step
-from .base import Report
+from .base import Decision, Report
 from .providers import Usage
 
 
@@ -20,7 +20,9 @@ class GreedyIntentAgent:
         self.refused: set = set()  # cells the controller refused; reset when the board changes
         self.stones_seen: int | None = None
 
-    def decide(self, obs: Observation, report: Report) -> list[Intent]:
+    def decide(self, obs: Observation, report: Report) -> list[Intent] | Decision:
+        if report.reason.startswith("periodic check-in"):
+            return Decision([], replace=False)  # keep running orders on heartbeats
         grid, rng = obs.grid, self.config.bomb_range
         if obs.stones_remaining != self.stones_seen:
             self.refused.clear()

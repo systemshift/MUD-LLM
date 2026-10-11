@@ -15,7 +15,7 @@ from ..control import Intent
 from ..control.bomberman import blast, cell_at
 from ..games.bomberman import BombermanConfig, BombermanGame, Observation
 from ..sim import DIRECTIONS, Pos, step
-from .base import Report
+from .base import Decision, Report
 from .providers import Usage
 
 BLOCKING = {"#", "S"}
@@ -76,7 +76,9 @@ class ExplorerAgent:
         self.refused: set = set()
         self.last_orders: list[str] = []
 
-    def decide(self, obs: Observation, report: Report) -> list[Intent]:
+    def decide(self, obs: Observation, report: Report) -> list[Intent] | Decision:
+        if report.reason.startswith("periodic check-in"):
+            return Decision([], replace=False)  # keep running orders on heartbeats
         grid = self.memory.update(obs)
         self.refused |= {o.intent.target for o in report.outcomes if o.status == "failed"}
         rng = self.config.bomb_range
@@ -192,7 +194,9 @@ class OracleAgent:
         self.usage = Usage()
         self.last_orders: list[str] = []
 
-    def decide(self, obs: Observation, report: Report) -> list[Intent]:
+    def decide(self, obs: Observation, report: Report) -> list[Intent] | Decision:
+        if report.reason.startswith("periodic check-in"):
+            return Decision([], replace=False)  # keep running orders on heartbeats
         g = self.game
         if self.planner:
             job = self.planner.job(self.player_id)
