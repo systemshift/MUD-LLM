@@ -2,17 +2,23 @@
 
 from .embed import HashEmbedder, OpenAIEmbedder
 from .routers import (
+    ROUTERS,
     Broadcast,
+    ChannelOp,
     CommsContext,
     Hypergraph,
     Message,
     NoComms,
+    RandomK,
     Router,
+    SelfOrganized,
+    ShuffledHypergraph,
     Spatial,
     Team,
     Vector,
     make_router,
 )
 
-__all__ = ["Broadcast", "CommsContext", "HashEmbedder", "Hypergraph", "Message", "NoComms",
-           "OpenAIEmbedder", "Router", "Spatial", "Team", "Vector", "make_router"]
+__all__ = ["ROUTERS", "Broadcast", "ChannelOp", "CommsContext", "HashEmbedder", "Hypergraph",
+           "Message", "NoComms", "OpenAIEmbedder", "RandomK", "Router", "SelfOrganized",
+           "ShuffledHypergraph", "Spatial", "Team", "Vector", "make_router"]

@@ -219,7 +219,9 @@ def main():
     exp = sub.add_parser("experiment", help="scaling grid: team size x comms x seed")
     exp.add_argument("--out", required=True, help="output directory (resumable)")
     exp.add_argument("--sizes", type=int, nargs="+", default=[16, 32, 64])
-    exp.add_argument("--comms", nargs="+", default=["none", "broadcast", "hypergraph", "vector"])
+    exp.add_argument("--comms", nargs="+",
+                     default=["none", "broadcast", "random-k", "self-organized", "vector",
+                              "hypergraph", "shuffled-hypergraph"])
     exp.add_argument("--seeds", type=int, nargs="+", default=[1, 2])
     exp.add_argument("--policy", default="llm", choices=["llm", "independent", "oracle"])
     exp.add_argument("--model", default="gpt-6-luna")
@@ -227,7 +229,11 @@ def main():
     exp.add_argument("--embedder", default="hash", choices=["hash", "openai"])
     exp.add_argument("--think-ticks", type=int, default=0)
     exp.add_argument("--max-ticks", type=int, default=200)
-    exp.add_argument("--message-cooldown", type=int, default=5)
+    exp.add_argument("--heartbeat", type=int, default=10,
+                     help="every agent also decides at least this often")
+    exp.add_argument("--inbox-cap", type=int, default=40)
+    exp.add_argument("--memory", default="window", choices=["window", "chain", "none"])
+    exp.add_argument("--random-k", type=int, default=6)
     exp.add_argument("--budget", type=float, default=5.0, help="USD cap across the whole grid")
     exp.add_argument("--workers", type=int, default=2, help="cells run in parallel")
     exp.set_defaults(func=lambda a: __import__("mudllm.experiment", fromlist=["run_grid"])

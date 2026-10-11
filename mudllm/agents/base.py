@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from ..comms import Message
+from ..comms import ChannelOp, Message
 from ..control import Intent, Outcome
 from ..sim import Event
 from .providers import Usage
@@ -18,6 +18,8 @@ class Report:
     notices: list[str] = field(default_factory=list)  # e.g. a message that couldn't be sent
     channels: list[str] = field(default_factory=list)  # where this agent may post now
     comms_info: str = ""  # how communication works in this run
+    can_manage_channels: bool = False  # self-organized: agent may create/join/leave/invite
+    directory: list[dict] = field(default_factory=list)  # channels it could join
 
 
 @dataclass
@@ -32,6 +34,7 @@ class Decision:
     messages: list[OutMessage] = field(default_factory=list)
     focus: str | None = None  # what the agent is working on, for relevance routing
     replace: bool = True  # False: queue after current orders instead of replacing them
+    channel_ops: list[ChannelOp] = field(default_factory=list)
 
 
 class Agent(Protocol):

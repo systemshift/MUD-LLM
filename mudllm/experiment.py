@@ -64,13 +64,18 @@ def run_cell(size: int, comms: str, seed: int, args, budget: Budget, out: Path) 
     game = DungeonGame(config, seed=seed)
     if args.policy == "llm":
         agents = [LLMDungeonAgent(p, config, OpenAIProvider(args.model, args.effort),
-                                  think_ticks=args.think_ticks) for p in game.player_ids()]
+                                  memory=args.memory, think_ticks=args.think_ticks)
+                  for p in game.player_ids()]
     elif args.policy == "oracle":
         agents = [OracleAgent(p, game) for p in game.player_ids()]
     else:
         agents = [IndependentAgent(p, config) for p in game.player_ids()]
 
     router_kwargs = {}
+    if comms in ("random-k", "shuffled-hypergraph"):
+        router_kwargs["seed"] = seed
+    if comms == "random-k":
+        router_kwargs["k"] = args.random_k
     if comms == "vector" and args.embedder == "openai":
         from .comms import OpenAIEmbedder
         # semantic similarities run higher than hash ones; cap recipients near hyperedge size
@@ -92,9 +97,12 @@ def run_cell(size: int, comms: str, seed: int, args, budget: Budget, out: Path) 
         return False
 
     t0 = time.time()
+    # fairness controls, identical across conditions: messages never wake anyone, everyone
+    # decides on the same triggers plus a heartbeat, and reads at most inbox_cap messages
     result = run_game(game, agents, Clock(think_ticks=args.think_ticks), max_ticks=args.max_ticks,
-                      comms=make_router(comms, **router_kwargs),
-                      message_cooldown=args.message_cooldown, should_stop=should_stop)
+                      comms=make_router(comms, **router_kwargs), wake_on_message=False,
+                      heartbeat=args.heartbeat, inbox_cap=args.inbox_cap,
+                      should_stop=should_stop)
     usage = spend()
     cost = usage.cost(args.model) or 0.0
     budget.finish(key, cost)
@@ -120,6 +128,9 @@ def run_cell(size: int, comms: str, seed: int, args, budget: Budget, out: Path) 
         "big_fires": sum(f["stacks"] >= 4 for f in fires),
         "wasted_fires": sum(f["stacks"] <= 1 for f in fires),
         "messages": result.comms["sent"], "deliveries": result.comms["deliveries"],
+        "dropped": result.comms.get("dropped", 0),
+        "channels_created": result.comms.get("channels_created"),
+        "channel_sizes": result.comms.get("channel_sizes"),
         "delivered_chars": result.comms["delivered_chars"],
         "inbox_per_agent": round(result.comms["deliveries"] / size, 1),
         "calls": usage.calls, "errors": usage.errors,

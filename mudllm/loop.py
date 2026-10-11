@@ -78,6 +78,7 @@ class _Slot:
     sent: int = 0
     received: int = 0
     received_chars: int = 0
+    dropped: int = 0
 
 
 @dataclass
@@ -98,14 +99,18 @@ class GameResult:
 def run_game(game: Game, agents: list[Agent], clock: Clock | None = None,
              max_ticks: int = 400, heartbeat: int | None = None, safety: bool = True,
              prefetch: bool | None = None, comms: Router | None = None,
-             wake_on_message: bool = True, message_cooldown: int = 5, on_tick=None,
-             log: EventLog | None = None, should_stop=None) -> GameResult:
+             wake_on_message: bool = True, message_cooldown: int = 5,
+             inbox_cap: int | None = None, on_tick=None, log: EventLog | None = None,
+             should_stop=None) -> GameResult:
     """
     prefetch: wake an agent when its last order starts, so it thinks while that order runs;
         the new orders queue behind it. Defaults to on whenever thinking costs ticks.
     comms: message router (default: no communication).
     wake_on_message: incoming messages wake an idle-minded agent, at most once every
-        message_cooldown ticks after its last decision.
+        message_cooldown ticks after its last decision. Experiments turn this off so
+        messages never buy extra thinking.
+    inbox_cap: show at most this many (newest) messages per turn; the rest are dropped
+        with a notice. Applied identically to every comms mode.
     log: pass an EventLog to watch the run while it happens (e.g. the live viewer).
     should_stop: callable checked every tick to end the run early.
     """
@@ -141,8 +146,17 @@ def run_game(game: Game, agents: list[Agent], clock: Clock | None = None,
                                       message_cooldown)
                 if reason:
                     reason_of[pid] = reason
-                    waking.append((pid, Report(reason, s.outcomes, s.events, s.inbox, s.notices,
-                                               comms.channels(pid, ctx), comms.describe())))
+                    inbox = s.inbox
+                    if inbox_cap is not None and len(inbox) > inbox_cap:
+                        s.notices.append(f"{len(inbox) - inbox_cap} older messages were dropped "
+                                         f"(you can read at most {inbox_cap} per turn)")
+                        s.dropped += len(inbox) - inbox_cap
+                        inbox = inbox[-inbox_cap:]
+                    manages = getattr(comms, "manages_channels", False)
+                    waking.append((pid, Report(
+                        reason, s.outcomes, s.events, inbox, s.notices,
+                        comms.channels(pid, ctx), comms.describe(), manages,
+                        comms.directory(pid, ctx) if manages else [])))
                     s.outcomes, s.events, s.inbox, s.notices = [], [], [], []
 
             futures = {pid: pool.submit(slots[pid].agent.decide, game.observe(pid), report)
@@ -161,10 +175,14 @@ def run_game(game: Game, agents: list[Agent], clock: Clock | None = None,
                                       [i.describe() for i in decision.intents]),
                     "messages": [{"channel": m.channel, "text": m.text}
                                  for m in decision.messages],
+                    "channel_ops": [vars(op) for op in decision.channel_ops],
                     "focus": decision.focus,
                 })])
 
-            # Land decisions whose thinking time has elapsed: orders start, messages go out
+            # Land decisions whose thinking time has elapsed: orders start, then all
+            # channel operations apply, then all messages go out (two phases, so no player
+            # gains from being processed first within a tick)
+            landed = []
             for pid, s in slots.items():
                 if s.pending and s.pending[0] <= tick:
                     _, decision, reason = s.pending
@@ -174,7 +192,11 @@ def run_game(game: Game, agents: list[Agent], clock: Clock | None = None,
                     s.prefetch_armed = True
                     if decision.focus is not None:
                         s.focus = decision.focus
-                    log.extend(_send(pid, decision, slots, comms, ctx, tick))
+                    landed.append((pid, decision))
+            for pid, decision in landed:
+                log.extend(_apply_channel_ops(pid, decision, slots, comms, ctx, tick))
+            for pid, decision in landed:
+                log.extend(_send(pid, decision, slots, comms, ctx, tick))
 
             actions = {}
             for pid, s in slots.items():
@@ -198,17 +220,36 @@ def run_game(game: Game, agents: list[Agent], clock: Clock | None = None,
         players[pid] = {"agent": s.agent.name, **game.player_summary(pid),
                         "decisions": s.decisions, "idle_ticks": s.idle_ticks,
                         "sent": s.sent, "received": s.received,
-                        "received_chars": s.received_chars,
+                        "received_chars": s.received_chars, "dropped": s.dropped,
                         "usage": vars(s.agent.usage).copy()}
     comms_stats = {"mode": comms.name, "sent": sum(s.sent for s in slots.values()),
                    "deliveries": sum(s.received for s in slots.values()),
-                   "delivered_chars": sum(s.received_chars for s in slots.values())}
+                   "delivered_chars": sum(s.received_chars for s in slots.values()),
+                   "dropped": sum(s.dropped for s in slots.values())}
+    if hasattr(comms, "stats"):
+        comms_stats.update(comms.stats())
     return GameResult(seed=game.seed, cleared=game.done, ticks=game.tick, game=game.summary(),
                       players=players, comms=comms_stats, log=log)
 
 
 def _as_decision(result) -> Decision:
     return result if isinstance(result, Decision) else Decision(list(result))
+
+
+def _apply_channel_ops(pid: int, decision: Decision, slots: dict[int, _Slot], comms: Router,
+                       ctx, tick: int) -> list[Event]:
+    events = []
+    if decision.channel_ops and getattr(comms, "manages_channels", False):
+        for op in decision.channel_ops:
+            ok, notice, others = comms.apply(pid, op, ctx, tick)
+            slots[pid].notices.append(notice)
+            for other, text in others.items():
+                if other in slots:
+                    slots[other].notices.append(text)
+            events.append(Event(tick, "channel", {"player": pid, "op": op.op,
+                                                  "channel": op.channel, "ok": ok,
+                                                  "detail": notice}))
+    return events
 
 
 def _send(pid: int, decision: Decision, slots: dict[int, _Slot], comms: Router, ctx,
@@ -224,6 +265,8 @@ def _send(pid: int, decision: Decision, slots: dict[int, _Slot], comms: Router, 
         recipients = [r for r in comms.route(pid, out.channel, out.text, ctx, focus)
                       if r in slots and r != pid]
         msg = Message(tick, pid, out.channel, out.text, recipients)
+        if hasattr(comms, "touch"):
+            comms.touch(pid, out.channel, ctx, tick)
         slots[pid].sent += 1
         for r in recipients:
             slots[r].inbox.append(msg)

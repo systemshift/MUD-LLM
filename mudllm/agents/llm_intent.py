@@ -59,8 +59,8 @@ class LLMIntentAgent(LLMOrderAgent):
     kind = "llm-intent"
 
     def __init__(self, player_id: int, config: BombermanConfig, provider,
-                 memory: bool = True, think_ticks: int = 0):
-        super().__init__(player_id, provider, memory)
+                 memory: bool | str = True, think_ticks: int = 0, window: int = 6):
+        super().__init__(player_id, provider, memory, window)
         self.config = config
         self._instructions = system_prompt(config, think_ticks)
 
