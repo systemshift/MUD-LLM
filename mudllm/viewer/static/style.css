@@ -72,7 +72,8 @@ canvas { background: #0b0d12; border: 1px solid var(--line); border-radius: 8px;
 aside { display: flex; flex-direction: column; gap: 12px; max-height: calc(100vh - 140px); }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
 .card.grow { flex: 1; min-height: 200px; display: flex; flex-direction: column; overflow: hidden; }
-#orders { overflow-y: auto; flex: 1; }
+#orders, #messages { overflow-y: auto; flex: 1; }
+#players { max-height: 210px; overflow-y: auto; }
 
 .kv { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; }
 .kv dt { color: var(--muted); }

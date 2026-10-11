@@ -132,6 +132,63 @@ class DungeonFrames:
         frame["alive"] = sum(m["alive"] for m in s["monsters"].values())
 
 
+class QuestFrames:
+    """Quest world logs carry a compact tick_state each tick, so frames copy it exactly."""
+
+    def __init__(self, init: dict):
+        self.world = init["world"]
+        self.state = {
+            "players": {int(pid): dict(p) for pid, p in init["players"].items()},
+            "quests": {int(qid): dict(q) for qid, q in init["quests"].items()},
+            "score": init.get("score", 0.0),
+        }
+
+    def new_frame(self) -> dict:
+        return {"done": [], "expired": [], "spawned": [], "ignites": []}
+
+    def start_tick(self):
+        pass
+
+    def end_tick(self):
+        pass
+
+    def apply(self, e: Event, frame: dict):
+        d, s = e.data, self.state
+        if e.kind == "tick_state":
+            for pid, (zone, wounds, downed) in d["players"].items():
+                p = s["players"][int(pid)]
+                p.update(zone=zone, wounds=wounds, downed=bool(downed))
+            for qid, (progress, hp, stacks, key_zone, holder) in d["quests"].items():
+                q = s["quests"].get(int(qid))
+                if q:
+                    q.update(progress=progress, stacks=stacks, key_zone=key_zone,
+                             key_holder=holder)
+                    if q["kind"] == "boss":
+                        q["hp"] = hp
+            s["score"] = d["score"]
+        elif e.kind == "quest_spawned":
+            s["quests"][d["id"]] = dict(d)
+            frame["spawned"].append(d["id"])
+        elif e.kind in ("quest_done", "quest_expired"):
+            q = s["quests"].get(d["quest"])
+            if q:
+                q["status"] = "done" if e.kind == "quest_done" else "expired"
+            frame["done" if e.kind == "quest_done" else "expired"].append(d)
+            if e.kind == "quest_done":
+                for pid in d["by"]:
+                    s["players"][pid]["points"] = round(
+                        s["players"][pid].get("points", 0) + d["points"] / len(d["by"]), 2)
+        elif e.kind == "ignite":
+            frame["ignites"].append(d)
+
+    def refresh(self, frame: dict):
+        s = self.state
+        frame["players"] = {pid: dict(p) for pid, p in s["players"].items()}
+        frame["quests"] = {qid: dict(q) for qid, q in s["quests"].items()
+                           if q.get("status", "active") == "active"}
+        frame["score"] = s["score"]
+
+
 class Replayer:
     """Incremental: feed events as they arrive (live runs) and read frames."""
 
@@ -150,8 +207,10 @@ class Replayer:
         d = e.data
         if e.kind == "init":
             game = d.get("game", "bomberman")
-            self._rules = DungeonFrames(d) if game == "dungeon" else BombermanFrames(d)
-            self.meta.update(seed=d.get("seed"), config=d.get("config"), game=game)
+            rules = {"dungeon": DungeonFrames, "quest": QuestFrames}.get(game, BombermanFrames)
+            self._rules = rules(d)
+            self.meta.update(seed=d.get("seed"), config=d.get("config"), game=game,
+                             world=d.get("world"))
             self.frames = [self._frame(0)]
             return
         if e.kind == "meta":
@@ -171,6 +230,8 @@ class Replayer:
             frame["decisions"].append(d)
         elif e.kind == "message":
             frame["messages"].append(d)
+        elif e.kind == "channel":
+            frame["channels"].append(d)
         elif e.kind == "game_over":
             frame["game_over"] = True
         elif e.kind == "end":
@@ -181,7 +242,8 @@ class Replayer:
         self._rules.refresh(frame)
 
     def _frame(self, tick: int) -> dict[str, Any]:
-        frame = {"tick": tick, "decisions": [], "messages": [], "game_over": False,
+        frame = {"tick": tick, "decisions": [], "messages": [], "channels": [],
+                 "game_over": False,
                  **self._rules.new_frame()}
         self._rules.refresh(frame)
         return frame

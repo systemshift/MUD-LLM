@@ -87,3 +87,29 @@ def test_dungeon_replay_matches_engine_every_tick():
         for pid, p in snap["players"].items():
             assert frame["players"][pid] == p, (frame["tick"], pid)
     assert any(f["fires"] for f in frames)
+
+
+def test_quest_replay_matches_engine_every_tick():
+    from mudllm.agents.quest_scripted import OracleAgent, OraclePlanner
+    from mudllm.games.quest import QuestConfig, QuestGame
+
+    g = QuestGame(QuestConfig(num_players=12), seed=3)
+    planner = OraclePlanner(g)
+    snaps = {}
+    result = run_game(g, [OracleAgent(p, planner) for p in g.players], max_ticks=80,
+                      heartbeat=5,
+                      on_tick=lambda game, ev: snaps.__setitem__(game.tick, game.snapshot()))
+    meta, frames = build_frames(result.log.events)
+    assert meta["game"] == "quest" and meta["world"]["zones"]
+    assert len(frames) == result.ticks + 1
+    for frame in frames[1:]:
+        snap = snaps[frame["tick"]]
+        assert frame["score"] == snap["score"]
+        for pid, p in snap["players"].items():
+            f = frame["players"][pid]
+            assert (f["zone"], f["wounds"], f["downed"]) == (p["zone"], p["wounds"], p["downed"])
+        active = {qid for qid, q in snap["quests"].items() if q["status"] == "active"}
+        assert set(frame["quests"]) == active
+        for qid in active:
+            if snap["quests"][qid]["kind"] == "boss":
+                assert frame["quests"][qid]["hp"] == snap["quests"][qid]["hp"]

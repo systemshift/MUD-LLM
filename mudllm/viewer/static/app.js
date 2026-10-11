@@ -168,16 +168,19 @@ function render() {
   const frame = view.frames[view.index];
   if (!frame) return;
   const dungeon = view.meta.game === "dungeon";
-  if (dungeon) drawDungeon(frame); else drawBoard(frame);
+  const quest = view.meta.game === "quest";
+  if (quest) drawQuest(frame); else if (dungeon) drawDungeon(frame); else drawBoard(frame);
   renderInfo(frame);
   renderPlayers(frame);
   renderOrders(frame);
   renderMessages(frame);
   const total = view.frames[view.frames.length - 1].tick;
   $("tickLabel").textContent = `tick ${frame.tick} / ${total}`;
-  $("stonesLabel").textContent = dungeon
-    ? `${frame.alive} monster${frame.alive === 1 ? "" : "s"} alive${frame.game_over ? " · all slain" : ""}`
-    : `${frame.stones} stones left${frame.game_over ? " · board cleared" : ""}`;
+  $("stonesLabel").textContent = quest
+    ? `score ${(100 * frame.score).toFixed(0)}% · ${Object.keys(frame.quests).length} active quests`
+    : dungeon
+      ? `${frame.alive} monster${frame.alive === 1 ? "" : "s"} alive${frame.game_over ? " · all slain" : ""}`
+      : `${frame.stones} stones left${frame.game_over ? " · board cleared" : ""}`;
 }
 
 function drawBoard(frame) {
@@ -266,13 +269,17 @@ function renderInfo(frame) {
     ["clock", clockLabel(m)],
   ];
   if (m.comms) rows.push(["comms", m.comms]);
-  if (m.config && m.game === "dungeon") {
+  if (m.config && m.game === "quest") {
+    rows.push(["world", `${m.world.zones.length} zones, ${m.world.regions.length} regions, ` +
+      `${m.config.num_players} players`]);
+    if (m.end) rows.push(["score", `${(100 * m.end.score).toFixed(0)}% (${m.end.quests_done}/${m.end.quests_total} quests)`]);
+  } else if (m.config && m.game === "dungeon") {
     rows.push(["dungeon", `${m.config.num_rooms} rooms, ${m.config.num_players} players, ` +
       `${Object.keys(frame.monsters).length} monsters × ${m.config.monster_hp} HP, regen ${m.config.regen}/t`]);
   } else if (m.config) {
     rows.push(["board", `${m.config.width}×${m.config.height}, fuse ${m.config.bomb_fuse}, range ${m.config.bomb_range}`]);
   }
-  if (m.end) rows.push(["result", `${m.end.cleared ? "cleared" : "not cleared"} in ${m.end.ticks} ticks`]);
+  if (m.end && m.game !== "quest") rows.push(["result", `${m.end.cleared ? "cleared" : "not cleared"} in ${m.end.ticks} ticks`]);
   $("runInfo").innerHTML = "<h2>Run</h2><dl class='kv'>" +
     rows.map(([k, v]) => `<dt>${k}</dt><dd>${escapeHtml(String(v))}</dd>`).join("") + "</dl>";
 }
@@ -287,8 +294,11 @@ function clockLabel(m) {
 function renderPlayers(frame) {
   const agents = view.meta.agents || {};
   const dungeon = view.meta.game === "dungeon";
+  const quest = view.meta.game === "quest";
   $("players").innerHTML = Object.entries(frame.players).map(([pid, p]) => {
-    const stat = dungeon
+    const stat = quest
+      ? `<span class="agent">${p.cls} · ${view.meta.world.zones[p.zone]}${p.downed ? " · downed" : ""}</span> ${(p.points || 0).toFixed(1)}`
+      : dungeon
       ? `<span class="agent">room ${p.room} · mana ${p.mana}</span> ${p.damage}`
       : `${p.score}${p.hits ? ` <span class="hit">· ${p.hits} hit${p.hits > 1 ? "s" : ""}</span>` : ""}`;
     return `<div class="player">
@@ -322,13 +332,22 @@ function renderOrders(frame) {
       <ol>${orders}</ol></div>`;
   }).join("");
   $("orders").innerHTML = html;
-  const current = $("orders").querySelector(".decision.current");
-  if (current) current.scrollIntoView({ block: "nearest" });
+  // scroll the list itself (scrollIntoView would scroll the whole page)
+  const list = $("orders");
+  const current = list.querySelector(".decision.current");
+  if (current) {
+    const top = current.offsetTop - list.offsetTop;
+    if (top < list.scrollTop || top > list.scrollTop + list.clientHeight - 40) list.scrollTop = top - 8;
+  }
 }
 
 function renderMessages(frame) {
   const items = [];
   for (const f of view.frames) {
+    for (const c of f.channels || []) {
+      if (c.ok) items.push({ tick: f.tick, from: c.player, channel: c.channel, to: [], system: true,
+                             text: `${c.op}${c.op === "invite" ? "d someone to" : ""} #${c.channel}` });
+    }
     for (const m of f.messages || []) items.push({ tick: f.tick, ...m });
   }
   const card = $("messagesCard");
@@ -339,7 +358,7 @@ function renderMessages(frame) {
   }
   $("messages").innerHTML = items.reverse().map((m) => {
     const cls = m.tick > frame.tick ? "future" : (m.tick === frame.tick ? "current" : "");
-    const to = m.to.length ? `→ ${m.to.map((p) => "P" + p).join(" ")}` : "→ nobody";
+    const to = m.system ? "channel" : m.to.length ? `→ ${m.to.map((p) => "P" + p).join(" ")}` : "→ nobody";
     return `<div class="message ${cls}">
       <div class="dhead"><span style="color:${COLORS[m.from]}">P${m.from}</span>
         <span>#${escapeHtml(m.channel)}</span><span>t${m.tick}</span><span>${to}</span></div>
@@ -451,6 +470,93 @@ function drawDungeon(frame) {
     ctx.textAlign = "center";
     ctx.fillText(`${frame.monsters[k.monster].name} slain by P${k.by}!`, cx, cy - size * 0.11);
   }
+}
+
+const CLASS_COLORS = { frost: "#5cc8ff", fire: "#ff6b3d", healer: "#7ddc6f", scout: "#f5c542",
+  locksmith: "#c79cff" };
+const QUEST_ICONS = { ritual: "◆", vault: "▣", gates: "⛩", boss: "☠" };
+
+function drawQuest(frame) {
+  const w = view.meta.world;
+  const top = canvas.getBoundingClientRect().top + window.scrollY;
+  const size = Math.floor(Math.max(320, Math.min(760, window.innerHeight - top - 90, window.innerWidth - 480)));
+  canvas.width = size; canvas.height = size;
+  ctx.fillStyle = "#0b0d12"; ctx.fillRect(0, 0, size, size);
+  const pos = (z) => [w.layout[z][0] * size, w.layout[z][1] * size];
+  const r = Math.max(6, Math.min(16, size / Math.sqrt(w.zones.length) / 3.2));
+
+  // region labels at region centroids
+  w.regions.forEach((name, ri) => {
+    const zs = w.zone_region.map((rr, z) => (rr === ri ? z : -1)).filter((z) => z >= 0);
+    const cx = zs.reduce((a, z) => a + pos(z)[0], 0) / zs.length;
+    const cy = zs.reduce((a, z) => a + pos(z)[1], 0) / zs.length;
+    ctx.fillStyle = "#3a4150"; ctx.font = `${Math.floor(size * 0.018)}px ui-sans-serif, sans-serif`;
+    ctx.textAlign = "center"; ctx.fillText(name.replace(/^the /, ""), cx, cy + 3);
+  });
+  ctx.strokeStyle = "#262c38"; ctx.lineWidth = 1.5;
+  for (const [a, b] of w.edges) {
+    const [x1, y1] = pos(a), [x2, y2] = pos(b);
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  }
+  // gates: dashed links between a quest's gates
+  for (const q of Object.values(frame.quests)) {
+    if (q.kind !== "gates") continue;
+    ctx.setLineDash([4, 4]); ctx.strokeStyle = "#f5c54288";
+    ctx.beginPath();
+    q.gates.forEach(([z], i) => { const [x, y] = pos(z); if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); });
+    ctx.closePath(); ctx.stroke(); ctx.setLineDash([]);
+  }
+  for (let z = 0; z < w.zones.length; z++) {
+    const [x, y] = pos(z);
+    ctx.fillStyle = "#171b23"; ctx.strokeStyle = "#323a48"; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  }
+  // quests
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  for (const q of Object.values(frame.quests)) {
+    const zones = q.kind === "gates" ? q.gates.map((g) => g[0]) : [q.zone];
+    for (const z of zones) {
+      const [x, y] = pos(z);
+      ctx.fillStyle = q.kind === "boss" ? "#e05d5d" : "#f5c542";
+      ctx.font = `bold ${Math.floor(r * 1.3)}px ui-sans-serif, sans-serif`;
+      ctx.fillText(QUEST_ICONS[q.kind], x, y - r * 1.55);
+    }
+    if (q.kind === "boss") {
+      const [x, y] = pos(q.zone);
+      ctx.fillStyle = "#1f2430"; ctx.fillRect(x - r * 1.4, y - r * 2.6, r * 2.8, 4);
+      ctx.fillStyle = "#e05d5d"; ctx.fillRect(x - r * 1.4, y - r * 2.6, r * 2.8 * q.hp / q.max_hp, 4);
+    }
+    if (q.kind === "vault" && q.key_zone !== null && q.key_zone !== undefined) {
+      const [x, y] = pos(q.key_zone);
+      ctx.fillStyle = "#f5c542"; ctx.font = `${Math.floor(r * 1.1)}px ui-sans-serif, sans-serif`;
+      ctx.fillText("⚷", x + r * 1.2, y - r * 1.1);
+    }
+  }
+  // players: class-coloured dots around their zone
+  const byZone = {};
+  for (const [pid, p] of Object.entries(frame.players)) (byZone[p.zone] ||= []).push([pid, p]);
+  for (const [z, ps] of Object.entries(byZone)) {
+    const [x, y] = pos(+z);
+    ps.forEach(([pid, p], i) => {
+      const a = (2 * Math.PI * i) / Math.max(ps.length, 1);
+      const rr = ps.length === 1 ? 0 : r * 0.55;
+      ctx.fillStyle = CLASS_COLORS[p.cls] || "#ccc";
+      ctx.globalAlpha = p.downed ? 0.35 : 1;
+      ctx.beginPath(); ctx.arc(x + rr * Math.cos(a), y + rr * Math.sin(a), Math.max(2.5, r * 0.32), 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 1;
+    });
+  }
+  for (const d of frame.done) {
+    const q = d.quest;
+    ctx.fillStyle = "#7ddc6f"; ctx.font = `bold ${Math.floor(size * 0.024)}px ui-sans-serif, sans-serif`;
+    ctx.fillText(`✓ quest ${q} (${d.kind}) +${d.points}`, size / 2, size * 0.04 + 20 * frame.done.indexOf(d));
+  }
+  // class legend
+  ctx.font = `${Math.floor(size * 0.018)}px ui-sans-serif, sans-serif`; ctx.textAlign = "left";
+  Object.entries(CLASS_COLORS).forEach(([cls, col], i) => {
+    ctx.fillStyle = col; ctx.beginPath(); ctx.arc(14, size - 16 - i * 16, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#9aa3b2"; ctx.fillText(cls, 24, size - 15 - i * 16);
+  });
 }
 
 function roundRect(x, y, w, h, r) {
