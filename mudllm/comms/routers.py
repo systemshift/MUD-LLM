@@ -243,8 +243,10 @@ class SelfOrganized:
     def describe(self) -> str:
         return (f"You can create channels, join or leave them, and invite players, with at "
                 f"most {self.max_memberships} memberships at a time. Messages posted to a "
-                f"channel reach only its members. The channel directory is listed each turn; "
-                f"keep channels small and focused (e.g. one per task or area).")
+                f"channel reach only its members. The channel directory is listed each turn. "
+                f"Stay in the 1-2 channels that matter for what you are doing now; join an "
+                f"existing channel before creating a new one; leave only when that task is "
+                f"over (joining fails while you are in {self.max_memberships}).")
 
     # ------------------------------------------------------------------ helpers
 

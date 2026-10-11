@@ -22,7 +22,7 @@ from .providers.openai import function_tool
 MAX_ORDERS = 4
 MAX_MESSAGES = 2
 MAX_MESSAGE_CHARS = 200
-MAX_CHANNEL_OPS = 3
+MAX_CHANNEL_OPS = 2
 
 
 class LLMOrderAgent:

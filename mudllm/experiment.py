@@ -198,7 +198,11 @@ def run_cell(env: str, size: int, comms: str, seed: int, args, budget: Budget,
     result.log.write_jsonl(log_path)
 
     players = result.players.values()
-    c = result.comms
+    c = dict(result.comms)
+    per_team = [v for k, v in c.items() if k.startswith("team") and isinstance(v, dict)]
+    if per_team:  # head-to-head: combine the teams' self-organized channel stats
+        c["channels_created"] = sum(v.get("channels_created", 0) for v in per_team)
+        c["channel_sizes"] = sorted(s for v in per_team for s in v.get("channel_sizes", []))
     return {
         "cell": key, "env": env, "size": size, "comms": comms, "seed": seed,
         "policy": policy, "model": args.model if policy == "llm" else None,

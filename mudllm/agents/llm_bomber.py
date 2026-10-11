@@ -4,7 +4,7 @@ from ..control import Intent
 from ..games.bomberman import BombermanConfig, Observation
 from ..games.bomberman.text import summarize_events
 from .base import Report
-from .bomber_scripted import MapMemory
+from .bomber_scripted import MapMemory, bomb_cells
 from .llm_orders import MAX_ORDERS, LLMOrderAgent
 
 BLOCK = 8
@@ -18,7 +18,7 @@ def system_prompt(c: BombermanConfig, think_ticks: int, versus: bool) -> str:
 
 SCORING: stone 'S' destroyed +{c.stone_points}; iron 'I' destroyed +{c.iron_points} (split); treasure 'T' picked up +{c.treasure_points} (walk onto it; treasures hide under some stones). Being caught in a blast sends you home and you sit out {c.respawn_ticks} ticks.
 
-IRON: an iron block is destroyed only when blasts from TWO DIFFERENT players hit it in the SAME tick. Agree with a teammate on a block and a tick, each take a different cell in line with it (within {c.bomb_range}), and both use bomb_at with that at_tick. One bomb alone does nothing to iron.
+IRON: an iron block is destroyed only when blasts from TWO DIFFERENT players hit it in the SAME tick. One bomb alone does nothing to iron. To break one, two players each take a different cell in line with it (the observation lists those cells for every iron block you see) and both bomb_at their cell with the same at_tick, far enough ahead for both to arrive (e.g. now + 15). Iron is worth {c.iron_points // c.stone_points}x a stone, so pairing up on iron is the best use of time when a teammate is nearby. If you can message teammates, propose it concretely, e.g. "Iron at (12,14): I take (12,13), you take (12,15), both bomb at t40." Without messages, you can still pair with a teammate you can see by picking a tick and hoping they pick the same cell plan.
 
 FOG: you see only {c.view_radius} cells around you. Stones lie in clusters with empty ground between them; unexplored areas may hide clusters. You don't see teammates beyond your view.
 
@@ -90,6 +90,13 @@ class LLMBomberAgent(LLMOrderAgent):
         lines += window
         bombs = [f"({b['pos'][0]},{b['pos'][1]}) explodes in {b['fuse']}" for b in obs.bombs]
         lines.append("Visible bombs: " + ("; ".join(bombs) if bombs else "none"))
+        irons = [(r, c) for r in rows for c in cols if obs.grid[r][c] == "I"]
+        if irons:
+            lines.append("Iron blocks in view (needs two players' bombs in the same tick):")
+            for pos in irons[:6]:
+                cells = bomb_cells(obs.grid, pos, self.config.bomb_range)
+                lines.append(f"- iron ({pos[0]},{pos[1]}): bomb cells "
+                             + ", ".join(f"({r},{c})" for r, c in cells[:6]))
         mates = [f"P{pid} at ({p['pos'][0]},{p['pos'][1]})" for pid, p in obs.players.items()
                  if pid != obs.player_id]
         if mates:

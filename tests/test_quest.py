@@ -199,3 +199,16 @@ def test_oracle_hyperedges_follow_quests():
     edges = g.hyperedges()
     assert 1 in edges[f"q{q.id}-ritual"] and 2 not in edges[f"q{q.id}-ritual"]
     assert make_router("hypergraph").channels(1, g) == [f"q{q.id}-ritual"]
+
+
+def test_oracle_edges_are_small_and_capped_per_player():
+    g = QuestGame(QuestConfig(num_players=32), seed=2)
+    for _ in range(30):
+        g.step({})
+    edges = g.hyperedges()
+    assert edges and max(len(m) for m in edges.values()) <= 8
+    per_player = {}
+    for members in edges.values():
+        for p in members:
+            per_player[p] = per_player.get(p, 0) + 1
+    assert max(per_player.values()) <= 2

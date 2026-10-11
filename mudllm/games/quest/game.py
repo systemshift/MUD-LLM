@@ -534,26 +534,50 @@ class QuestGame:
     def distance(self, a: int, b: int) -> float:
         return self.dist[self.players[a].zone][self.players[b].zone]
 
-    def helpers(self, q: Quest, max_dist: int = 4) -> set[int]:
-        """Ground truth: players who could usefully help with q (class fits, close enough)."""
-        need = set()
-        if q.kind == "ritual":
-            need = set(q.need)
-        elif q.kind == "vault":
-            need = {"locksmith"}
-        elif q.kind == "boss":
-            need = {"frost", "fire", "healer"}
-        out = set()
-        targets = q.zones() + ([q.key_zone] if q.key_zone is not None else [])
-        for p in self.players.values():
-            close = min(self.dist[p.zone][z] for z in targets) <= max_dist
-            useful = q.kind in ("gates",) or p.cls in need or (q.kind == "vault")
-            if close and useful:
-                out.add(p.id)
-        return out
+    def helpers(self, q: Quest, max_dist: int = 5) -> list[tuple[int, int]]:
+        """Ground truth: the nearest players a quest actually needs, plus one spare per role.
+        Returns (distance, player) pairs."""
+        def nearest(zone: int, k: int, cls: str | None = None) -> list[tuple[int, int]]:
+            cands = sorted((self.dist[p.zone][zone], p.id) for p in self.players.values()
+                           if (cls is None or p.cls == cls) and self.dist[p.zone][zone] <= max_dist)
+            return cands[:k]
 
-    def hyperedges(self) -> dict[str, set[int]]:
-        return {f"q{q.id}-{q.kind}": self.helpers(q) for q in self.active_quests()}
+        picks: list[tuple[int, int]] = []
+        if q.kind == "ritual":
+            for cls, n in q.need.items():
+                picks += nearest(q.zone, n + 1, cls)
+        elif q.kind == "vault":
+            picks += nearest(q.zone, 2, "locksmith")
+            if q.key_holder:
+                picks.append((0, q.key_holder))
+            elif q.key_zone is not None:
+                picks += nearest(q.key_zone, 2)
+        elif q.kind == "gates":
+            for gate in q.gates:
+                picks += nearest(gate, 2)
+        else:
+            picks += nearest(q.zone, 3, "frost") + nearest(q.zone, 2, "fire") + \
+                nearest(q.zone, 1, "healer")
+        best: dict[int, int] = {}
+        for d, pid in picks:
+            best[pid] = min(d, best.get(pid, d))
+        return sorted((d, pid) for pid, d in best.items())
+
+    def hyperedges(self, max_per_player: int = 2) -> dict[str, set[int]]:
+        """One channel per active quest with its nearest needed players; each player is in
+        at most `max_per_player` channels (its nearest quests), so channels stay small."""
+        candidates = []
+        for q in self.active_quests():
+            for d, pid in self.helpers(q):
+                candidates.append((d, -q.points, q.id, pid))
+        edges: dict[str, set[int]] = {f"q{q.id}-{q.kind}": set() for q in self.active_quests()}
+        names = {q.id: f"q{q.id}-{q.kind}" for q in self.active_quests()}
+        load: dict[int, int] = {}
+        for _d, _, qid, pid in sorted(candidates):
+            if load.get(pid, 0) < max_per_player:
+                edges[names[qid]].add(pid)
+                load[pid] = load.get(pid, 0) + 1
+        return {name: members for name, members in edges.items() if members}
 
     def describe_player(self, player_id: int) -> str:
         p = self.players[player_id]
