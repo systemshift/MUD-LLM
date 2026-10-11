@@ -9,6 +9,7 @@ from .routers import (
     Hypergraph,
     Message,
     NoComms,
+    PerTeam,
     RandomK,
     Router,
     SelfOrganized,
@@ -20,5 +21,5 @@ from .routers import (
 )
 
 __all__ = ["ROUTERS", "Broadcast", "ChannelOp", "CommsContext", "HashEmbedder", "Hypergraph",
-           "Message", "NoComms", "OpenAIEmbedder", "RandomK", "Router", "SelfOrganized",
+           "Message", "NoComms", "OpenAIEmbedder", "PerTeam", "RandomK", "Router", "SelfOrganized",
            "ShuffledHypergraph", "Spatial", "Team", "Vector", "make_router"]

@@ -152,10 +152,13 @@ def run_game(game: Game, agents: list[Agent], clock: Clock | None = None,
                                          f"(you can read at most {inbox_cap} per turn)")
                         s.dropped += len(inbox) - inbox_cap
                         inbox = inbox[-inbox_cap:]
-                    manages = getattr(comms, "manages_channels", False)
+                    manages = (comms.manages_for(pid, ctx) if hasattr(comms, "manages_for")
+                               else getattr(comms, "manages_channels", False))
+                    info = (comms.describe_for(pid, ctx) if hasattr(comms, "describe_for")
+                            else comms.describe())
                     waking.append((pid, Report(
                         reason, s.outcomes, s.events, inbox, s.notices,
-                        comms.channels(pid, ctx), comms.describe(), manages,
+                        comms.channels(pid, ctx), info, manages,
                         comms.directory(pid, ctx) if manages else [])))
                     s.outcomes, s.events, s.inbox, s.notices = [], [], [], []
 

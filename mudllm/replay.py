@@ -19,15 +19,18 @@ class BombermanFrames:
         self.config = BombermanConfig(**init["config"]) if "config" in init else BombermanConfig()
         self.state = {
             "grid": [list(row) for row in init["grid"]],
-            "players": {int(pid): {"pos": list(p["pos"]), "score": p["score"], "hits": p["hits"]}
+            "players": {int(pid): {"pos": list(p["pos"]), "score": p["score"], "hits": p["hits"],
+                                   **({"team": p["team"], "treasures": p.get("treasures", 0),
+                                       "downed_until": 0} if "team" in p else {})}
                         for pid, p in init["players"].items()},
             "bombs": [dict(b, pos=list(b["pos"])) for b in init["bombs"]],
         }
 
     def new_frame(self) -> dict:
-        return {"blasts": [], "hits": [], "notes": []}
+        return {"blasts": [], "hits": [], "notes": [], "irons": []}
 
     def start_tick(self):
+        self.tick = getattr(self, "tick", 0) + 1
         for b in self.state["bombs"]:  # fuses burn once per tick
             b["fuse"] -= 1
 
@@ -38,13 +41,26 @@ class BombermanFrames:
         d, s, c = e.data, self.state, self.config
         if e.kind == "move":
             s["players"][d["player"]]["pos"] = list(d["to"])
+        elif e.kind == "treasure":
+            r, col = d["pos"]
+            s["grid"][r][col] = " "
+            p = s["players"][d["player"]]
+            p["score"] += c.treasure_points
+            p["treasures"] = p.get("treasures", 0) + 1
+        elif e.kind == "iron_broken":
+            r, col = d["pos"]
+            s["grid"][r][col] = " "
+            for o in d["by"]:
+                s["players"][o]["score"] += c.iron_points // len(d["by"])
+            frame["irons"].append(d)
         elif e.kind == "bomb_placed":
             # the engine already burned this tick's fuse by the end of the placing tick
             s["bombs"].append({"pos": list(d["pos"]), "owner": d["player"], "fuse": c.bomb_fuse})
         elif e.kind == "explosion":
             s["bombs"] = [b for b in s["bombs"] if b["pos"] != list(d["pos"])]
+            revealed = {tuple(t) for t in d.get("treasures", [])}
             for r, col in d["stones"]:
-                s["grid"][r][col] = " "
+                s["grid"][r][col] = "T" if (r, col) in revealed else " "
             if d["owner"] in s["players"]:
                 s["players"][d["owner"]]["score"] += c.stone_points * len(d["stones"])
             frame["blasts"].append({"owner": d["owner"], "cells": d["cells"]})
@@ -52,6 +68,9 @@ class BombermanFrames:
             p = s["players"][d["player"]]
             p["score"] += c.hit_penalty
             p["hits"] += 1
+            if "respawn" in d:
+                p["pos"] = list(d["respawn"])
+                p["downed_until"] = d["until"]
             frame["hits"].append(d["player"])
         elif e.kind in ("move_blocked", "bomb_failed"):
             frame["notes"].append(f"P{d['player']} {e.kind.replace('_', ' ')}")
@@ -59,9 +78,17 @@ class BombermanFrames:
     def refresh(self, frame: dict):
         s = self.state
         frame["grid"] = ["".join(row) for row in s["grid"]]
-        frame["players"] = {pid: dict(p, pos=list(p["pos"])) for pid, p in s["players"].items()}
+        tick = frame["tick"]
+        frame["players"] = {}
+        for pid, p in s["players"].items():
+            fp = dict(p, pos=list(p["pos"]))
+            if "downed_until" in p or "team" in p:
+                fp["downed"] = p.get("downed_until", 0) > tick
+                fp.pop("downed_until", None)
+            frame["players"][pid] = fp
         frame["bombs"] = [dict(b, pos=list(b["pos"])) for b in s["bombs"]]
         frame["stones"] = sum(row.count("S") for row in s["grid"])
+        frame["iron"] = sum(row.count("I") for row in s["grid"])
 
 
 class DungeonFrames:

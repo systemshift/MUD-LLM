@@ -16,7 +16,7 @@ from ..games.bomberman import BombermanConfig, Observation
 from ..sim import DIRECTIONS, Event, Pos, step
 from .base import Intent, Outcome
 
-BLOCKING = {"#", "S"}
+BLOCKING = {"#", "S", "I"}
 MOVES = tuple(DIRECTIONS)
 
 # danger[cell] = ticks-from-now (1 = end of next tick) at which that cell is in an explosion
@@ -42,7 +42,7 @@ def blast(grid: list[str], pos: Pos, bomb_range: int) -> set[Pos]:
             if kind == "#":
                 break
             cells.add(cur)
-            if kind == "S":
+            if kind in ("S", "I"):
                 break
     return cells
 
@@ -123,6 +123,7 @@ class BombermanController:
         self.timeout = timeout or 3 * (config.width + config.height)
         self.queue: deque[Intent] = deque()
         self.outcomes: list[Outcome] = []
+        self.memory: list[list[str]] | None = None  # terrain remembered under fog of war
 
     @property
     def idle(self) -> bool:
@@ -146,7 +147,26 @@ class BombermanController:
             if e.kind == "bomb_failed" and e.data["player"] == self.player_id and self.queue:
                 self._finish("failed", "bomb could not be placed", e.tick)
 
+    def remember(self, obs: Observation) -> Observation:
+        """Under fog, plan on remembered terrain: cells seen before keep their last-seen
+        terrain, never-seen cells stay '?' (treated as passable until seen)."""
+        if obs.view_radius is None:
+            return obs
+        if self.memory is None:
+            self.memory = [list(row) for row in obs.grid]
+        merged = []
+        for r, row in enumerate(obs.grid):
+            mem = self.memory[r]
+            for c, ch in enumerate(row):
+                if ch != "?":
+                    mem[c] = ch if ch in "#SIT?" else " "  # players/bombs aren't terrain
+            merged.append("".join(ch if ch != "?" else mem[c] for c, ch in enumerate(row)))
+        return Observation(**{**obs.__dict__, "grid": merged})
+
     def act(self, obs: Observation) -> str:
+        if obs.downed_until > obs.tick:
+            return "pass"
+        obs = self.remember(obs)
         danger = danger_map(obs.grid, obs.bombs, self.config.bomb_range)
         route = danger if self.safety else {}
         while self.queue:
@@ -210,8 +230,13 @@ class BombermanController:
                                           f"waiting safely at (row {pos[0]}, col {pos[1]})")
                 path = plan_path(grid, pos, danger, lambda p, t: safe_from(danger, p, t))
                 return (path[0] if path else "pass"), "running", ""
+            at = intent.params.get("at_tick") or 0  # joint actions: bomb on an exact tick
+            if at and obs.tick + 1 > at:
+                return None, "failed", f"missed t{at} (now t{obs.tick + 1})"
             if pos != target:
                 return self._route_to(obs, target, route)
+            if at and obs.tick + 1 < at:
+                return self._reflex(obs, danger), "running", ""  # wait here for the tick
             if any(tuple(b["pos"]) == target for b in obs.bombs):
                 return None, "failed", f"a bomb is already at (row {target[0]}, col {target[1]})"
             new_bomb = {"pos": target, "fuse": self.config.bomb_fuse + 1}

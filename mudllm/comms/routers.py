@@ -383,6 +383,54 @@ class Vector:
         return sorted(p for score, p in scored[: self.top_k] if score >= self.threshold)
 
 
+class PerTeam:
+    """Head-to-head: each team gets its own router; nothing crosses between teams."""
+
+    def __init__(self, routers: dict[int, Router]):
+        self.routers = routers
+        self.name = " vs ".join(f"{team}:{r.name}" for team, r in sorted(routers.items()))
+        self.manages_channels = any(getattr(r, "manages_channels", False)
+                                    for r in routers.values())
+
+    def _for(self, pid, ctx) -> Router:
+        return self.routers[ctx.team(pid)]
+
+    def describe_for(self, pid, ctx) -> str:
+        return self._for(pid, ctx).describe()
+
+    def describe(self) -> str:
+        return "Communication rules depend on your team; see your channels."
+
+    def channels(self, pid, ctx):
+        return self._for(pid, ctx).channels(pid, ctx)
+
+    def route(self, sender, channel, text, ctx, focus):
+        team = ctx.team(sender)
+        return [p for p in self._for(sender, ctx).route(sender, channel, text, ctx, focus)
+                if ctx.team(p) == team]
+
+    def manages_for(self, pid, ctx) -> bool:
+        return getattr(self._for(pid, ctx), "manages_channels", False)
+
+    def apply(self, pid, op, ctx, tick):
+        router = self._for(pid, ctx)
+        if not getattr(router, "manages_channels", False):
+            return False, "your team cannot manage channels", {}
+        return router.apply(pid, op, ctx, tick)
+
+    def directory(self, pid, ctx):
+        router = self._for(pid, ctx)
+        return router.directory(pid, ctx) if getattr(router, "manages_channels", False) else []
+
+    def touch(self, sender, channel, ctx, tick):
+        router = self._for(sender, ctx)
+        if hasattr(router, "touch"):
+            router.touch(sender, channel, ctx, tick)
+
+    def stats(self) -> dict:
+        return {f"team{t}": r.stats() for t, r in self.routers.items() if hasattr(r, "stats")}
+
+
 ROUTERS = {"none": NoComms, "broadcast": Broadcast, "team": Team, "spatial": Spatial,
            "random-k": RandomK, "hypergraph": Hypergraph,
            "shuffled-hypergraph": ShuffledHypergraph, "self-organized": SelfOrganized,

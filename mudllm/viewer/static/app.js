@@ -180,7 +180,7 @@ function render() {
     ? `score ${(100 * frame.score).toFixed(0)}% · ${Object.keys(frame.quests).length} active quests`
     : dungeon
       ? `${frame.alive} monster${frame.alive === 1 ? "" : "s"} alive${frame.game_over ? " · all slain" : ""}`
-      : `${frame.stones} stones left${frame.game_over ? " · board cleared" : ""}`;
+      : `${frame.stones} stones${frame.iron ? `, ${frame.iron} iron` : ""} left${frame.game_over ? " · board cleared" : ""}`;
 }
 
 function drawBoard(frame) {
@@ -204,6 +204,14 @@ function drawBoard(frame) {
         ctx.fillRect(x, y, size, size);
         ctx.fillStyle = TILE.wallTop;
         ctx.fillRect(x + 2, y + 2, size - 4, size * 0.35);
+      } else if (cell === "I") {
+        ctx.fillStyle = "#6f7f99";
+        ctx.fillRect(x + 1, y + 1, size - 2, size - 2);
+        ctx.strokeStyle = "#a9b7cf"; ctx.lineWidth = Math.max(1, size / 10);
+        ctx.strokeRect(x + size * 0.2, y + size * 0.2, size * 0.6, size * 0.6);
+      } else if (cell === "T") {
+        ctx.fillStyle = "#f5c542";
+        ctx.beginPath(); ctx.arc(x + size / 2, y + size / 2, size * 0.28, 0, Math.PI * 2); ctx.fill();
       } else if (cell === "S") {
         ctx.fillStyle = TILE.stone;
         ctx.fillRect(x + 2, y + 2, size - 4, size - 4);
@@ -243,21 +251,27 @@ function drawBoard(frame) {
     ctx.fillText(bomb.fuse, cx, cy + 1);
   }
 
+  const teamColors = { 1: "#4f8cff", 2: "#ff6b6b" };
+  const versus = Object.values(frame.players).some((p) => p.team === 2);
   for (const [pid, p] of Object.entries(frame.players)) {
     const [r, c] = p.pos;
     const cx = c * size + size / 2, cy = r * size + size / 2;
     const onBomb = frame.bombs.some((b) => b.pos[0] === r && b.pos[1] === c);
     const radius = size * (onBomb ? 0.22 : 0.32);
-    ctx.fillStyle = COLORS[pid];
+    ctx.globalAlpha = p.downed ? 0.3 : 1;
+    ctx.fillStyle = versus ? teamColors[p.team] : COLORS[pid];
     ctx.beginPath(); ctx.arc(cx, cy - (onBomb ? size * 0.2 : 0), radius, 0, Math.PI * 2); ctx.fill();
     if (frame.hits.includes(+pid)) {
       ctx.strokeStyle = "#ff3030"; ctx.lineWidth = 4;
       ctx.beginPath(); ctx.arc(cx, cy, size * 0.45, 0, Math.PI * 2); ctx.stroke();
     }
-    ctx.fillStyle = "#0b0d12";
-    ctx.font = `bold ${Math.floor(radius)}px ui-sans-serif, sans-serif`;
-    ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillText(pid, cx, cy - (onBomb ? size * 0.2 : 0) + 1);
+    if (size >= 14) {
+      ctx.fillStyle = "#0b0d12";
+      ctx.font = `bold ${Math.floor(radius)}px ui-sans-serif, sans-serif`;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(pid, cx, cy - (onBomb ? size * 0.2 : 0) + 1);
+    }
+    ctx.globalAlpha = 1;
   }
 }
 
