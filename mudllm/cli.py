@@ -216,19 +216,22 @@ def main():
     dungeon.add_argument("--log-dir")
     dungeon.set_defaults(func=cmd_dungeon)
 
-    exp = sub.add_parser("experiment", help="scaling grid: team size x comms x seed")
+    exp = sub.add_parser("experiment", help="controlled grid: env x size x comms x seed")
     exp.add_argument("--out", required=True, help="output directory (resumable)")
+    exp.add_argument("--envs", nargs="+", default=["dungeon"],
+                     choices=["dungeon", "quest", "bomber", "versus"])
     exp.add_argument("--sizes", type=int, nargs="+", default=[16, 32, 64])
     exp.add_argument("--comms", nargs="+",
                      default=["none", "broadcast", "random-k", "self-organized", "vector",
-                              "hypergraph", "shuffled-hypergraph"])
+                              "hypergraph", "shuffled-hypergraph"],
+                     help="comms modes; for versus use 'modeA:modeB' (team 1 vs team 2)")
     exp.add_argument("--seeds", type=int, nargs="+", default=[1, 2])
-    exp.add_argument("--policy", default="llm", choices=["llm", "independent", "oracle"])
+    exp.add_argument("--policy", default="llm", choices=["llm", "local", "oracle"])
     exp.add_argument("--model", default="gpt-6-luna")
     exp.add_argument("--effort", default="low")
     exp.add_argument("--embedder", default="hash", choices=["hash", "openai"])
     exp.add_argument("--think-ticks", type=int, default=0)
-    exp.add_argument("--max-ticks", type=int, default=200)
+    exp.add_argument("--max-ticks", type=int, default=150)
     exp.add_argument("--heartbeat", type=int, default=10,
                      help="every agent also decides at least this often")
     exp.add_argument("--inbox-cap", type=int, default=40)
@@ -239,10 +242,10 @@ def main():
     exp.set_defaults(func=lambda a: __import__("mudllm.experiment", fromlist=["run_grid"])
                      .run_grid(a))
 
-    table = sub.add_parser("table", help="summarize an experiment's results.jsonl")
+    table = sub.add_parser("analyze", help="paired analysis of an experiment's results.jsonl")
     table.add_argument("results")
-    table.set_defaults(func=lambda a: __import__("mudllm.experiment", fromlist=["print_table"])
-                       .print_table(a.results))
+    table.set_defaults(func=lambda a: __import__("mudllm.experiment", fromlist=["analyze"])
+                       .analyze(a.results))
 
     view = sub.add_parser("view", help="web viewer: replay runs and watch live games")
     view.add_argument("--host", default="127.0.0.1")

@@ -44,6 +44,7 @@ class BombermanConfig:
     iron_points: int = 40
     clusters: int = 0  # number of stone patches for "clusters" (0 = one per 6 players)
     cluster_radius: int = 5
+    mirror: bool = False  # left/right mirror-symmetric map and spawns (fair team-vs-team)
 
     def __post_init__(self):
         if self.width % 2 == 0 or self.height % 2 == 0:
@@ -64,6 +65,7 @@ class BombermanConfig:
                       stone_layout="clusters", stone_probability=0.75, iron_fraction=0.25)
         if versus:
             params["teams"] = tuple(1 if i < num_players // 2 else 2 for i in range(num_players))
+            params["mirror"] = True
         else:
             params["teams"] = (1,) * num_players  # cooperative: one team
         params.update(overrides)
@@ -125,9 +127,13 @@ class BombermanGame:
         self.initial_stones = self.stones_remaining()
         # treasures use their own RNG stream so classic boards stay identical
         trng = random.Random(f"{seed}-treasure")
+        w = self.config.width
         self.treasures: set[Pos] = {
             (r, c) for r, row in enumerate(self.grid) for c, cell in enumerate(row)
-            if cell == STONE and trng.random() < self.config.treasure_probability}
+            if cell == STONE and (not self.config.mirror or c <= w // 2)
+            and trng.random() < self.config.treasure_probability}
+        if self.config.mirror:
+            self.treasures |= {(r, w - 1 - c) for r, c in self.treasures}
         self.treasures_total = len(self.treasures)
         self.initial_iron = sum(row.count(IRON) for row in self.grid)
         self.iron_destroyed = 0
@@ -155,6 +161,12 @@ class BombermanGame:
                 v = max(lo + 1, min(hi - 1, v))
                 return v if v % 2 else v + (1 if v + 1 < hi else -1)
 
+            if c.mirror and ti == 1:  # second team mirrors the first team's spawns
+                first = [i for i in range(c.num_players) if c.teams[i] == teams[0]]
+                for i, j in zip(members, first, strict=False):
+                    r0, c0 = spawn_of[j]
+                    spawn_of[i] = (r0, w - 1 - c0)
+                continue
             for k, i in enumerate(members):
                 sq, slot = divmod(k, c.squad_size)
                 r0 = odd(round(1 + (sq // cols + 0.5) * (h - 2) / rows), 1, h - 2)
@@ -174,6 +186,10 @@ class BombermanGame:
                     grid[r][c] = WALL
         if self.config.stone_layout == "clusters":
             self._place_clusters(grid)
+            if self.config.mirror:
+                for r in range(h):
+                    for c in range(w // 2 + 1, w):
+                        grid[r][c] = grid[r][w - 1 - c]
         else:
             for r in range(1, h - 1):
                 for c in range(1, w - 1):
@@ -194,7 +210,8 @@ class BombermanGame:
         c = self.config
         h, w = c.height, c.width
         k = c.clusters or max(2, c.num_players // 6)
-        centers = [(self.rng.randrange(1, h - 1), self.rng.randrange(1, w - 1)) for _ in range(k)]
+        hi_c = w // 2 + 1 if c.mirror else w - 1  # mirrored maps: clusters on the left, copied
+        centers = [(self.rng.randrange(1, h - 1), self.rng.randrange(1, hi_c)) for _ in range(k)]
         for r in range(1, h - 1):
             for col in range(1, w - 1):
                 if grid[r][col] != FLOOR:
@@ -389,12 +406,16 @@ class BombermanGame:
     def summary(self) -> dict:
         teams: dict[int, int] = {}
         team_stones: dict[int, int] = {}
+        team_earned: dict[int, int] = {}  # points from stones, iron, treasures (no penalties)
         for p in self.players.values():
-            teams[self.team(p.id)] = teams.get(self.team(p.id), 0) + p.score
-            team_stones[self.team(p.id)] = team_stones.get(self.team(p.id), 0) + p.stones
+            t = self.team(p.id)
+            teams[t] = teams.get(t, 0) + p.score
+            team_stones[t] = team_stones.get(t, 0) + p.stones
+            team_earned[t] = team_earned.get(t, 0) + p.score - self.config.hit_penalty * p.hits
         return {"stones": f"{self.initial_stones - self.stones_remaining()}/{self.initial_stones}",
                 "stones_remaining": self.stones_remaining(), "team_scores": teams,
-                "team_stones": team_stones, "cleared": round(self.cleared_fraction(), 4),
+                "team_stones": team_stones, "team_earned": team_earned,
+                "cleared": round(self.cleared_fraction(), 4),
                 "cleared_sum": round(self.cleared_sum, 4),
                 "treasures": sum(p.treasures for p in self.players.values()),
                 "treasures_total": self.treasures_total,
