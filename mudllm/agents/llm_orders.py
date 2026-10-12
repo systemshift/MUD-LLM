@@ -23,6 +23,7 @@ MAX_ORDERS = 4
 MAX_MESSAGES = 2
 MAX_MESSAGE_CHARS = 200
 MAX_CHANNEL_OPS = 2
+MAX_NOTES = 600
 
 
 class LLMOrderAgent:
@@ -40,6 +41,7 @@ class LLMOrderAgent:
         self.memory = {True: "chain", False: "none"}.get(memory, memory)
         self.history: deque[str] = deque(maxlen=window)
         self._last_turn: str | None = None
+        self.notes = ""  # private notebook the agent rewrites each turn (same in every condition)
         self.name = f"{self.kind}:{provider.model}"
         self.usage = Usage()
         self.previous_id: str | None = None
@@ -130,6 +132,8 @@ class LLMOrderAgent:
                                      op.get("purpose", ""), int(op.get("player", 0) or 0)))
             focus = args.get("focus") or focus
             replace = not args.get("keep_current_orders", False)
+            if str(args.get("notes", "")).strip():  # empty means keep the old notes
+                self.notes = str(args["notes"]).strip()[:MAX_NOTES]
         if not intents and replace:
             intents = [Intent("wait", ticks=1)]
         tick = getattr(obs, "tick", "?")
@@ -143,6 +147,8 @@ class LLMOrderAgent:
 
     def _status(self, obs: Any, report: Report) -> str:
         parts = [f"Woken because: {report.reason}."]
+        if self.notes:
+            parts.append(f"YOUR NOTES: {self.notes}")
         summary = self.summarize(report)
         if summary:
             parts.append(f"Since your last turn: {summary}.")
@@ -206,6 +212,11 @@ class LLMOrderAgent:
                     "additionalProperties": False,
                 },
             }
+        props["notes"] = {
+            "type": "string",
+            "description": f"your private notebook (max {MAX_NOTES} chars), shown to you next "
+                           f"turn; it replaces the old notes; empty string keeps them",
+        }
         # always offered (not only with comms) so no condition is disadvantaged
         props["keep_current_orders"] = {
             "type": "boolean",

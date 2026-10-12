@@ -30,9 +30,10 @@ from .agents.providers import Usage
 from .comms import PerTeam, make_router
 from .loop import Clock, run_game
 
-ENVIRONMENTS = ("dungeon", "quest", "bomber", "versus")
+ENVIRONMENTS = ("dungeon", "quest", "bomber", "versus", "knowledge")
 # per-environment time limits (the dungeon's 4000-HP monsters take longer)
-DEFAULT_MAX_TICKS = {"dungeon": 250, "quest": 150, "bomber": 150, "versus": 150}
+DEFAULT_MAX_TICKS = {"dungeon": 250, "quest": 150, "bomber": 150, "versus": 150,
+                     "knowledge": 120}
 
 
 def max_ticks_for(env: str, args) -> int:
@@ -94,6 +95,14 @@ def build(env: str, size: int, seed: int, policy: str, args) -> tuple[Any, list]
         make = {"llm": lambda p: LLMQuestAgent(p, game, provider(), **llm_kwargs),
                 "local": lambda p: LocalAgent(p, game),
                 "oracle": lambda p: OracleAgent(p, planner)}
+    elif env == "knowledge":
+        from .agents.knowledge_scripted import LocalAgent as KLocal
+        from .agents.knowledge_scripted import OracleAgent as KOracle
+        from .agents.llm_knowledge import LLMKnowledgeAgent
+        from .games.knowledge import KnowledgeConfig, KnowledgeGame
+        game = KnowledgeGame(KnowledgeConfig(num_players=size), seed=seed)
+        make = {"llm": lambda p: LLMKnowledgeAgent(p, game, provider(), **llm_kwargs),
+                "local": lambda p: KLocal(p, game), "oracle": lambda p: KOracle(p, game)}
     elif env in ("bomber", "versus"):
         from .agents.bomber_scripted import ExplorerAgent, IronPlanner, OracleAgent
         from .agents.llm_bomber import LLMBomberAgent
@@ -143,7 +152,7 @@ def primary_score(env: str, game, result, max_ticks: int) -> float:
         kills = result.game["killed"]
         return round(sum((max_ticks - t) / max_ticks for t in kills.values())
                      / len(game.monsters), 4)
-    if env in ("quest", "bomber"):
+    if env in ("quest", "bomber", "knowledge"):
         return result.game["score"]
     # versus: team 1's share of points earned (stones, iron, treasures; hits cost respawn time)
     earned = result.game["team_earned"]
@@ -162,6 +171,10 @@ def env_details(env: str, game, result) -> dict:
         g = result.game
         return {"quests_done": g["quests_done"], "quests_total": g["quests_total"],
                 "by_kind": g["by_kind"]}
+    if env == "knowledge":
+        g = result.game
+        return {k: g[k] for k in ("issued", "correct", "wrong", "expired",
+                                  "cross_domain_correct")}
     g = result.game
     return {"stones": g["cleared"], "iron": g["iron"], "iron_total": g["iron_total"],
             "treasures": g["treasures"], "team_earned": g["team_earned"],
