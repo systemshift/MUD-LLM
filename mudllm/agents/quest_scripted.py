@@ -61,6 +61,8 @@ def _useful(quest: dict, cls: str) -> bool:
 
 
 class LocalAgent:
+
+    sequential = True  # deterministic: decide in player order, never in parallel
     def __init__(self, player_id: int, game: QuestGame):
         self.player_id = player_id
         self.game = game  # only for the public map (random wandering targets)
@@ -163,6 +165,8 @@ class OraclePlanner:
 
 
 class OracleAgent:
+
+    sequential = True  # deterministic: decide in player order, never in parallel
     def __init__(self, player_id: int, planner: OraclePlanner):
         self.player_id = player_id
         self.planner = planner

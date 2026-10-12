@@ -40,6 +40,7 @@ RELAY_INSTRUCTIONS = """You are a communication relay inside a team of cooperati
 
 class Mediated:
     wants_focus = True
+    family = "hypergraph"  # transforms information; everything in routers.py is a graph
 
     def __init__(self, base: Router, provider, name: str | None = None, period: int = 5,
                  max_messages: int = 150, batch: int = 16, digest_chars: int = 300):
@@ -53,6 +54,7 @@ class Mediated:
         self.usage = Usage()
         self.errors = 0
         self.manages_channels = getattr(base, "manages_channels", False)
+        self.free_channels = getattr(base, "free_channels", False)
         self.buffer: dict[str, list[tuple[Message, set[int]]]] = {}
         self.last_flush = 0
         self.digests_sent = 0
@@ -67,6 +69,11 @@ class Mediated:
 
     def channels(self, pid, ctx):
         return self.base.channels(pid, ctx)
+
+    def accepts(self, pid, channel, ctx) -> bool:
+        if hasattr(self.base, "accepts"):
+            return self.base.accepts(pid, channel, ctx)
+        return channel in self.base.channels(pid, ctx)
 
     def route(self, sender, channel, text, ctx, focus):
         return []  # nothing is delivered directly; see post()

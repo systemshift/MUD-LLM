@@ -204,3 +204,37 @@ def test_window_memory_is_stateless_with_recent_turns():
     content = last["items"][-1]["content"]
     assert content.startswith("YOUR RECENT TURNS")
     assert content.count("ordered wait(2)") == 2  # window of 2
+
+
+# ---------------------------------------------------------------- graph baselines
+
+
+def test_dm_whispers_reach_exactly_one_player():
+    dm = make_router("dm")
+    assert dm.route(1, "@P3", "x", CTX, {}) == [3]
+    assert dm.route(1, "p3", "x", CTX, {}) == [3]
+    assert dm.route(1, "@P1", "x", CTX, {}) == []  # not to yourself
+    assert dm.route(1, "@P99", "x", CTX, {}) == []
+    assert make_router("dm", scope="team").route(1, "@P4", "x", CTX, {}) == []  # other team
+
+
+def test_chatbox_has_global_local_whisper_and_groups():
+    cb = make_router("chatbox", local_radius=1)
+    assert cb.route(3, "global", "x", CTX, {}) == [1, 2, 4, 5, 6]
+    assert cb.route(3, "local", "x", CTX, {}) == [2, 4]  # distance |a-b| <= 1
+    assert cb.route(3, "@P6", "x", CTX, {}) == [6]
+    cb.apply(3, ChannelOp("create", "raid"), CTX, 1)
+    cb.apply(5, ChannelOp("join", "raid"), CTX, 1)
+    assert cb.route(3, "raid", "x", CTX, {}) == [5]
+    assert cb.channels(3, CTX) == ["global", "local", "raid"]
+    assert cb.accepts(3, "@P2", CTX) and not cb.accepts(3, "nonsense", CTX)
+
+
+def test_loop_delivers_whispers_through_free_channels():
+    cfg = BombermanConfig(num_players=3)
+    plan = {0: Decision([Intent("wait", ticks=3)], [OutMessage("@P3", "psst")])}
+    agents = [Scripted(p, cfg, plan if p == 1 else {}) for p in range(1, 4)]
+    run_game(BombermanGame(cfg, seed=1), agents, comms=make_router("dm"), max_ticks=6,
+             wake_on_message=False, heartbeat=2)
+    assert any(m.text == "psst" for _, r in agents[2].reports for m in r.messages)
+    assert all(not r.messages for _, r in agents[1].reports)

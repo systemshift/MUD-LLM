@@ -222,9 +222,8 @@ def main():
                      choices=["dungeon", "quest", "bomber", "versus", "knowledge", "mmo"])
     exp.add_argument("--sizes", type=int, nargs="+", default=[16, 32, 64])
     exp.add_argument("--comms", nargs="+",
-                     default=["none", "broadcast", "random-k", "self-organized", "vector",
-                              "oracle-hypergraph", "oracle-shuffled", "mediator",
-                              "mediated-hyperedges"],
+                     default=["none", "dm", "broadcast", "chatbox", "groups", "oracle-groups",
+                              "relay-global", "relay-groups", "relay-oracle"],
                      help="comms modes; for versus use 'modeA:modeB' (team 1 vs team 2)")
     exp.add_argument("--seeds", type=int, nargs="+", default=[1, 2])
     exp.add_argument("--policy", default="llm", choices=["llm", "local", "oracle"])

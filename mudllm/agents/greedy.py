@@ -11,6 +11,8 @@ from .providers import Usage
 
 
 class GreedyIntentAgent:
+
+    sequential = True  # deterministic: decide in player order, never in parallel
     def __init__(self, player_id: int, config: BombermanConfig):
         self.player_id = player_id
         self.config = config

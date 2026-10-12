@@ -17,6 +17,8 @@ from .providers import Usage
 
 
 class IndependentAgent:
+
+    sequential = True  # deterministic: decide in player order, never in parallel
     def __init__(self, player_id: int, config: DungeonConfig):
         self.player_id = player_id
         self.config = config
@@ -45,6 +47,8 @@ class IndependentAgent:
 
 
 class OracleAgent:
+
+    sequential = True  # deterministic: decide in player order, never in parallel
     def __init__(self, player_id: int, game: DungeonGame, period: int | None = None):
         self.player_id = player_id
         self.game = game

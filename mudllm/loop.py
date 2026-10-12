@@ -130,6 +130,8 @@ def run_game(game: Game, agents: list[Agent], clock: Clock | None = None,
     slots = {a.player_id: _Slot(a, game.make_controller(a.player_id, safety=safety))
              for a in agents}
     pool = ThreadPoolExecutor(max_workers=max(1, len(slots)))
+    # agents that share planners must decide in a fixed order to stay reproducible
+    sequential = any(getattr(a, "sequential", False) for a in agents)
 
     try:
         while not game.done and game.tick < max_ticks:
@@ -162,11 +164,16 @@ def run_game(game: Game, agents: list[Agent], clock: Clock | None = None,
                         reason, s.outcomes, s.events, inbox, s.notices,
                         comms.channels(pid, ctx), info, manages,
                         comms.directory(pid, ctx) if manages else [],
-                        getattr(comms, "wants_focus", False))))
+                        getattr(comms, "wants_focus", False),
+                        getattr(comms, "free_channels", False))))
                     s.outcomes, s.events, s.inbox, s.notices = [], [], [], []
 
-            futures = {pid: pool.submit(slots[pid].agent.decide, game.observe(pid), report)
-                       for pid, report in waking}
+            if sequential:  # scripted agents with shared state: one at a time, player order
+                futures = {pid: _done(slots[pid].agent.decide(game.observe(pid), report))
+                           for pid, report in waking}
+            else:
+                futures = {pid: pool.submit(slots[pid].agent.decide, game.observe(pid), report)
+                           for pid, report in waking}
             for pid, future in futures.items():
                 s = slots[pid]
                 before = s.agent.usage.latency_s
@@ -240,6 +247,16 @@ def run_game(game: Game, agents: list[Agent], clock: Clock | None = None,
                       players=players, comms=comms_stats, log=log)
 
 
+class _done:
+    """A finished 'future' for decisions computed inline."""
+
+    def __init__(self, value):
+        self.value = value
+
+    def result(self):
+        return self.value
+
+
 def _as_decision(result) -> Decision:
     return result if isinstance(result, Decision) else Decision(list(result))
 
@@ -266,7 +283,9 @@ def _send(pid: int, decision: Decision, slots: dict[int, _Slot], comms: Router, 
     allowed = comms.channels(pid, ctx)
     focus = {p: s.focus for p, s in slots.items()}
     for out in decision.messages:
-        if out.channel not in allowed:
+        ok = (comms.accepts(pid, out.channel, ctx) if hasattr(comms, "accepts")
+              else out.channel in allowed)
+        if not ok:
             slots[pid].notices.append(f"message not sent: you cannot post to "
                                       f"'{out.channel}' (your channels: {allowed or 'none'})")
             continue

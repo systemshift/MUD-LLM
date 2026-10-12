@@ -4,6 +4,26 @@ Status: design, not yet built. Supersedes the v1 scaling pilot (`runs/scale`, 9 
 games, stopped 2026-10-11), which had no controls for audience size, compute, or
 privileged topology.
 
+## Framing (2026-10-12): graphs vs hypergraphs
+
+The comparison is between two families of communication:
+
+- **Graph**: messages pass unchanged, whatever the topology: `dm` (whispers),
+  `broadcast`, `chatbox` (global + local + whispers + groups, the traditional human
+  design), `groups` (channels agents form), `oracle-groups` (ideal groups from the
+  game), plus controls `random-k` and `oracle-groups-shuffled`.
+- **Hypergraph**: an LLM inside the channel transforms the information so each node
+  gets only what it needs, as a digest: `relay-global`, `relay-groups`,
+  `relay-oracle`.
+
+Primary test: **matched pairs** with the same membership, raw vs transformed:
+`relay-global` vs `broadcast`, `relay-groups` vs `groups`, `relay-oracle` vs
+`oracle-groups`. Hypotheses: (1) each hypergraph beats its matched graph; (2) the
+advantage grows with N as raw messages flood agents' attention while digests stay
+small; (3) per-agent reading stays roughly constant for hypergraphs, and relay cost
+grows far more slowly than everyone reading everything. Relay cost is charged to the
+hypergraph condition; the relay's batching delay is a handicap it carries.
+
 ## Revision (2026-10-12, after two pilots)
 
 - **Terminology**: every condition is a hypergraph (a channel is a hyperedge). They

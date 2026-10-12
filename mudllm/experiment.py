@@ -32,6 +32,11 @@ from .loop import Clock, run_game
 
 ENVIRONMENTS = ("dungeon", "quest", "bomber", "versus", "knowledge", "mmo")
 # per-environment time limits (the dungeon's 4000-HP monsters take longer)
+# what "local" chat reaches in each environment (zones, domain, or grid distance)
+LOCAL_RADIUS = {"dungeon": 1, "quest": 1, "mmo": 1, "knowledge": 0, "bomber": 6, "versus": 6}
+# graph/hypergraph matched pairs: same membership, raw messages vs LLM-transformed digests
+MATCHED_PAIRS = [("relay-global", "broadcast"), ("relay-groups", "groups"),
+                 ("relay-oracle", "oracle-groups")]
 DEFAULT_MAX_TICKS = {"dungeon": 250, "quest": 150, "bomber": 150, "versus": 150,
                      "knowledge": 120, "mmo": 200}
 
@@ -120,18 +125,26 @@ def build(env: str, size: int, seed: int, policy: str, args) -> tuple[Any, list]
 
 def router_for(comms: str, seed: int, args, team_scope: bool):
     def one(name: str):
-        if name in ("mediator", "mediated-hyperedges", "mediated-oracle"):
+        relays = {"relay-global": "broadcast", "relay-groups": "groups",
+                  "relay-oracle": "oracle-groups",
+                  # older names
+                  "mediator": "broadcast", "mediated-hyperedges": "groups",
+                  "mediated-oracle": "oracle-groups"}
+        if name in relays:
             from .agents.providers.openai import OpenAIProvider
             from .comms.mediated import Mediated
-            base = {"mediator": "broadcast", "mediated-hyperedges": "self-organized",
-                    "mediated-oracle": "oracle-hypergraph"}[name]
+            base = relays[name]
             relay = (args.relay_provider() if hasattr(args, "relay_provider")
                      else OpenAIProvider(args.model, args.effort))
             return Mediated(one(base), relay, name=name, period=args.relay_period)
         kwargs: dict[str, Any] = {}
-        if name in ("broadcast", "random-k", "spatial", "self-organized", "vector") and team_scope:
+        if name in ("broadcast", "random-k", "spatial", "self-organized", "groups", "vector",
+                    "dm", "chatbox") and team_scope:
             kwargs["scope"] = "team"
-        if name in ("random-k", "shuffled-hypergraph", "oracle-shuffled"):
+        if name == "chatbox":
+            kwargs["local_radius"] = LOCAL_RADIUS.get(args.env_for_router, 1)
+        if name in ("random-k", "shuffled-hypergraph", "oracle-shuffled",
+                    "oracle-groups-shuffled"):
             kwargs["seed"] = seed
         if name == "random-k":
             kwargs["k"] = args.random_k
@@ -189,6 +202,7 @@ def run_cell(env: str, size: int, comms: str, seed: int, args, budget: Budget,
     key = cell_key(env, size, comms, seed)
     policy = args.policy
     game, agents = build(env, size, seed, policy, args)
+    args.env_for_router = env
     router = router_for(comms, seed, args, team_scope=env == "versus")
 
     relays = [r for r in getattr(router, "routers", {0: router}).values() if hasattr(r, "usage")]
@@ -311,7 +325,8 @@ def bootstrap_ci(values: list[float], reps: int = 4000, seed: int = 0) -> tuple[
 
 
 def analyze(results_path, baselines=("broadcast", "none")) -> dict:
-    """Per env x N: condition means with 95% CIs, and paired differences vs baselines."""
+    """Per env x N: condition means with 95% CIs; paired differences for the graph vs
+    hypergraph matched pairs (same membership, raw vs LLM-transformed), and vs baselines."""
     rows = [json.loads(line) for line in Path(results_path).read_text().splitlines()
             if line.strip()]
     rows = [r for r in rows if r.get("stopped") is None and "env" in r]
@@ -335,6 +350,15 @@ def analyze(results_path, baselines=("broadcast", "none")) -> dict:
                   f"{_mean([r['cost_usd'] for r in by_seed.values()]):>8.2f}")
             report.setdefault(f"{env}/{n}", {})[cond] = {"mean": _mean(scores),
                                                          "ci": [lo, hi], "n": len(scores)}
+        for hyper, graph in MATCHED_PAIRS:
+            if hyper in conds and graph in conds:
+                paired = [conds[hyper][s]["score"] - conds[graph][s]["score"]
+                          for s in conds[hyper] if s in conds[graph]]
+                if paired:
+                    lo, hi = bootstrap_ci(paired)
+                    flag = " *" if lo > 0 or hi < 0 else ""
+                    print(f"  HYPERGRAPH {hyper} - GRAPH {graph}: {_mean(paired):+.3f} "
+                          f"[{lo:+.3f}, {hi:+.3f}] over {len(paired)} paired seeds{flag}")
         for base in baselines:
             if base not in conds:
                 continue
@@ -353,22 +377,25 @@ def analyze(results_path, baselines=("broadcast", "none")) -> dict:
 
 
 def _scaling(groups):
-    """Slope of (self-organized - broadcast) vs log2 N, per environment."""
+    """How each graph -> hypergraph gap changes per doubling of N, per environment."""
     import math
-    by_env: dict[str, list[tuple[float, float]]] = {}
-    for (env, n), conds in groups.items():
-        a, b = conds.get("self-organized"), conds.get("broadcast")
-        if a and b:
-            for s in a:
-                if s in b:
-                    by_env.setdefault(env, []).append((math.log2(n), a[s]["score"] - b[s]["score"]))
-    for env, pts in by_env.items():
-        if len({x for x, _ in pts}) < 2:
-            continue
-        rng = random.Random(1)
-        slopes = sorted(_slope([rng.choice(pts) for _ in pts]) for _ in range(2000))
-        print(f"\n{env}: gap (self-organized - broadcast) per doubling of N: "
-              f"{_slope(pts):+.3f} [{slopes[50]:+.3f}, {slopes[1949]:+.3f}]")
+    pairs = [*MATCHED_PAIRS, ("groups", "broadcast")]
+    for hyper, graph in pairs:
+        by_env: dict[str, list[tuple[float, float]]] = {}
+        for (env, n), conds in groups.items():
+            a, b = conds.get(hyper), conds.get(graph)
+            if a and b:
+                for s in a:
+                    if s in b:
+                        by_env.setdefault(env, []).append(
+                            (math.log2(n), a[s]["score"] - b[s]["score"]))
+        for env, pts in by_env.items():
+            if len({x for x, _ in pts}) < 2:
+                continue
+            rng = random.Random(1)
+            slopes = sorted(_slope([rng.choice(pts) for _ in pts]) for _ in range(2000))
+            print(f"\n{env}: gap ({hyper} - {graph}) per doubling of N: "
+                  f"{_slope(pts):+.3f} [{slopes[50]:+.3f}, {slopes[1949]:+.3f}]")
 
 
 def _slope(pts):

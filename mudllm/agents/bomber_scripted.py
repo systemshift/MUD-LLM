@@ -67,6 +67,8 @@ def bfs(grid: list[str], start: Pos, goal) -> Pos | None:
 
 
 class ExplorerAgent:
+
+    sequential = True  # deterministic: decide in player order, never in parallel
     def __init__(self, player_id: int, config: BombermanConfig):
         self.player_id = player_id
         self.config = config
@@ -186,6 +188,8 @@ class IronPlanner:
 
 
 class OracleAgent:
+
+    sequential = True  # deterministic: decide in player order, never in parallel
     def __init__(self, player_id: int, game: BombermanGame, planner: IronPlanner | None = None):
         self.player_id = player_id
         self.game = game

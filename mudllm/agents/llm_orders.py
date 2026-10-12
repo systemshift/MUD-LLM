@@ -153,7 +153,8 @@ class LLMOrderAgent:
         if summary:
             parts.append(f"Since your last turn: {summary}.")
         parts += report.notices
-        if report.channels or report.messages or report.can_manage_channels:
+        if report.channels or report.messages or report.can_manage_channels or \
+                report.free_channels:
             parts.append(f"\nCOMMS: {report.comms_info} Your channels now: "
                          f"{', '.join(report.channels) or 'none'}.")
         if report.can_manage_channels:
@@ -195,11 +196,12 @@ class LLMOrderAgent:
                     "additionalProperties": False,
                 },
             }
-        if channels or report.can_manage_channels:
-            # channels created this turn are valid targets, so don't restrict to an enum
-            channel_schema = ({"type": "string", "description": "a channel you are in"}
-                              if report.can_manage_channels
-                              else {"type": "string", "enum": channels})
+        if channels or report.can_manage_channels or report.free_channels:
+            # new groups and whispers aren't in a fixed list, so don't restrict to an enum
+            free = report.can_manage_channels or report.free_channels
+            channel_schema = ({"type": "string", "description": "a channel name (or '@P<id>' "
+                                                                "to whisper, if allowed)"}
+                              if free else {"type": "string", "enum": channels})
             props["messages"] = {
                 "type": "array",
                 "description": (f"0-{MAX_MESSAGES} short messages (max {MAX_MESSAGE_CHARS} chars) "

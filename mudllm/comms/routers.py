@@ -2,6 +2,11 @@
 Communication topologies. This is the experimental variable: the same agents and
 game, with different rules about who hears a message.
 
+Project terminology: every router here is GRAPH communication: messages pass
+unchanged, whatever the topology (DMs, broadcast, group channels, chat boxes).
+HYPERGRAPH communication transforms information with a model so each node gets
+only what it needs; see mediated.py (relay-global, relay-groups, relay-oracle).
+
 A router answers:
   channels(pid)  which channels an agent may post to (shown to the agent)
   route(msg)     who receives a message posted to a channel
@@ -163,7 +168,7 @@ class Hypergraph:
     An upper bound, since agents don't get this structure for free in reality.
     """
 
-    name = "oracle-hypergraph"
+    name = "oracle-groups"
 
     def describe(self) -> str:
         return ("You can post to group channels you belong to; each reaches only that "
@@ -188,7 +193,7 @@ class ShuffledHypergraph(Hypergraph):
     mapping (within each team). Same channel count, sizes, and overlap; wrong people.
     """
 
-    name = "oracle-shuffled"
+    name = "oracle-groups-shuffled"
 
     def __init__(self, seed: int = 0):
         self.seed = seed
@@ -228,7 +233,7 @@ class SelfOrganized:
     can be discovered; reading and posting require membership.
     """
 
-    name = "self-organized"
+    name = "groups"
     manages_channels = True
     NAME_RE = re.compile(r"[^a-z0-9-]+")
 
@@ -434,12 +439,93 @@ class PerTeam:
         return {f"team{t}": r.stats() for t, r in self.routers.items() if hasattr(r, "stats")}
 
 
-ROUTERS = {"none": NoComms, "broadcast": Broadcast, "team": Team, "spatial": Spatial,
-           "random-k": RandomK, "oracle-hypergraph": Hypergraph,
-           "oracle-shuffled": ShuffledHypergraph, "self-organized": SelfOrganized,
+class DirectMessage:
+    """Whispers: a message addressed to '@P<id>' reaches exactly that player."""
+
+    name = "dm"
+    free_channels = True
+
+    def __init__(self, scope: str = "all"):
+        self.scope = scope
+
+    def describe(self) -> str:
+        return ("You can whisper to any single player by posting to channel '@P<id>' "
+                "(e.g. '@P7'). Only that player receives it.")
+
+    def channels(self, pid, ctx):
+        return []
+
+    def accepts(self, pid, channel, ctx) -> bool:
+        return self._target(pid, channel, ctx) is not None
+
+    def _target(self, pid, channel, ctx) -> int | None:
+        m = re.fullmatch(r"@?p?(\d+)", channel.strip().lower())
+        target = int(m.group(1)) if m else None
+        return target if target in peers(pid, ctx, self.scope) else None
+
+    def route(self, sender, channel, text, ctx, focus):
+        target = self._target(sender, channel, ctx)
+        return [target] if target is not None else []
+
+
+class Chatbox:
+    """
+    A traditional multi-channel chat box: 'global' (everyone), 'local' (players within
+    local_radius), whispers to '@P<id>', and groups players create and join.
+    """
+
+    name = "chatbox"
+    manages_channels = True
+    free_channels = True
+
+    def __init__(self, local_radius: float = 1, scope: str = "all", max_memberships: int = 3):
+        self.local_radius = local_radius
+        self.scope = scope
+        self.groups = SelfOrganized(max_memberships=max_memberships, scope=scope)
+        self.dm = DirectMessage(scope=scope)
+
+    def describe(self) -> str:
+        return ("A chat box with several channels: 'global' reaches everyone; 'local' reaches "
+                "players near you; '@P<id>' whispers to one player; and you can create, join, "
+                "or leave group channels (" + self.groups.describe() + ")")
+
+    def channels(self, pid, ctx):
+        return ["global", "local", *self.groups.channels(pid, ctx)]
+
+    def accepts(self, pid, channel, ctx) -> bool:
+        return channel in self.channels(pid, ctx) or self.dm.accepts(pid, channel, ctx)
+
+    def route(self, sender, channel, text, ctx, focus):
+        if channel == "global":
+            return peers(sender, ctx, self.scope)
+        if channel == "local":
+            return [p for p in peers(sender, ctx, self.scope)
+                    if ctx.distance(sender, p) <= self.local_radius]
+        if self.dm.accepts(sender, channel, ctx):
+            return self.dm.route(sender, channel, text, ctx, focus)
+        return self.groups.route(sender, channel, text, ctx, focus)
+
+    def apply(self, pid, op, ctx, tick):
+        return self.groups.apply(pid, op, ctx, tick)
+
+    def directory(self, pid, ctx):
+        return self.groups.directory(pid, ctx)
+
+    def touch(self, sender, channel, ctx, tick):
+        self.groups.touch(sender, channel, ctx, tick)
+
+    def stats(self) -> dict:
+        return self.groups.stats()
+
+
+ROUTERS = {"none": NoComms, "dm": DirectMessage, "broadcast": Broadcast, "chatbox": Chatbox,
+           "team": Team, "spatial": Spatial, "random-k": RandomK, "groups": SelfOrganized,
+           "oracle-groups": Hypergraph, "oracle-groups-shuffled": ShuffledHypergraph,
            "vector": Vector,
            # older names, kept so earlier results and commands still work
-           "hypergraph": Hypergraph, "shuffled-hypergraph": ShuffledHypergraph}
+           "self-organized": SelfOrganized, "oracle-hypergraph": Hypergraph,
+           "oracle-shuffled": ShuffledHypergraph, "hypergraph": Hypergraph,
+           "shuffled-hypergraph": ShuffledHypergraph}
 
 
 def make_router(name: str, **kwargs) -> Router:

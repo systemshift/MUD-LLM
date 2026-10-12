@@ -21,6 +21,7 @@ class Report:
     can_manage_channels: bool = False  # self-organized: agent may create/join/leave/invite
     directory: list[dict] = field(default_factory=list)  # channels it could join
     wants_focus: bool = False  # the channel routes by relevance, so a stated focus helps
+    free_channels: bool = False  # channel names aren't a fixed list (whispers, new groups)
 
 
 @dataclass

@@ -17,6 +17,8 @@ def resolve(game: KnowledgeGame, task_id: int, known: set[int]) -> str | None:
 
 
 class LocalAgent:
+
+    sequential = True  # deterministic: decide in player order, never in parallel
     def __init__(self, player_id: int, game: KnowledgeGame):
         self.player_id, self.game = player_id, game
         self.name, self.usage, self.last_orders = "local", Usage(), []
@@ -34,6 +36,8 @@ class LocalAgent:
 
 
 class OracleAgent(LocalAgent):
+
+    sequential = True  # deterministic: decide in player order, never in parallel
     def __init__(self, player_id: int, game: KnowledgeGame):
         super().__init__(player_id, game)
         self.name = "oracle"

@@ -35,7 +35,7 @@ def test_grid_runs_all_envs_and_resumes(tmp_path, capsys):
 
 def test_versus_conditions_build_per_team_routers():
     router = router_for("self-organized:broadcast", 1, args(), team_scope=True)
-    assert router.name == "1:self-organized vs 2:broadcast"
+    assert router.name == "1:groups vs 2:broadcast"
     assert router.routers[1].scope == "team" and router.routers[2].scope == "team"
 
 
@@ -150,3 +150,15 @@ def test_keep_current_orders_offered_in_every_condition(comms):
                         comms_info=router.describe(),
                         can_manage_channels=getattr(router, "manages_channels", False)))
     assert "keep_current_orders" in provider.requests[0]["tools"][0]["parameters"]["properties"]
+
+
+@pytest.mark.parametrize("env", ["bomber", "quest", "mmo", "knowledge", "dungeon"])
+def test_scripted_runs_are_exactly_reproducible(env):
+    """Baselines must be deterministic: same seed, same result, every time."""
+    from mudllm.loop import run_game
+    outcomes = []
+    for _ in range(2):
+        game, agents = build(env, 16, 5, "oracle", args())
+        result = run_game(game, agents, max_ticks=60, heartbeat=10, wake_on_message=False)
+        outcomes.append([(e.tick, e.kind, str(e.data)) for e in result.log.events])
+    assert outcomes[0] == outcomes[1]
