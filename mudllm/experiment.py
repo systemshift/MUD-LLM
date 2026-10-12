@@ -111,10 +111,18 @@ def build(env: str, size: int, seed: int, policy: str, args) -> tuple[Any, list]
 
 def router_for(comms: str, seed: int, args, team_scope: bool):
     def one(name: str):
+        if name in ("mediator", "mediated-hyperedges", "mediated-oracle"):
+            from .agents.providers.openai import OpenAIProvider
+            from .comms.mediated import Mediated
+            base = {"mediator": "broadcast", "mediated-hyperedges": "self-organized",
+                    "mediated-oracle": "oracle-hypergraph"}[name]
+            relay = (args.relay_provider() if hasattr(args, "relay_provider")
+                     else OpenAIProvider(args.model, args.effort))
+            return Mediated(one(base), relay, name=name, period=args.relay_period)
         kwargs: dict[str, Any] = {}
         if name in ("broadcast", "random-k", "spatial", "self-organized", "vector") and team_scope:
             kwargs["scope"] = "team"
-        if name in ("random-k", "shuffled-hypergraph"):
+        if name in ("random-k", "shuffled-hypergraph", "oracle-shuffled"):
             kwargs["seed"] = seed
         if name == "random-k":
             kwargs["k"] = args.random_k
@@ -170,10 +178,14 @@ def run_cell(env: str, size: int, comms: str, seed: int, args, budget: Budget,
     game, agents = build(env, size, seed, policy, args)
     router = router_for(comms, seed, args, team_scope=env == "versus")
 
-    def spend() -> Usage:
+    relays = [r for r in getattr(router, "routers", {0: router}).values() if hasattr(r, "usage")]
+
+    def spend() -> Usage:  # agents plus any relay models (smart channels are charged)
         total = Usage()
         for a in agents:
             total.add(a.usage)
+        for r in relays:
+            total.add(r.usage)
         return total
 
     stopped = {"reason": None}
@@ -215,6 +227,7 @@ def run_cell(env: str, size: int, comms: str, seed: int, args, budget: Budget,
         "delivered_chars": c["delivered_chars"],
         "inbox_per_agent": round(c["deliveries"] / size, 1),
         "channels_created": c.get("channels_created"),
+        "relay_cost_usd": c.get("relay_cost_usd"), "digests": c.get("digests"),
         "channel_sizes": c.get("channel_sizes"),
         "calls": usage.calls, "errors": usage.errors,
         "input_tokens": usage.input_tokens, "cached_tokens": usage.cached_tokens,

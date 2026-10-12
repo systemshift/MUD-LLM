@@ -161,7 +161,8 @@ def run_game(game: Game, agents: list[Agent], clock: Clock | None = None,
                     waking.append((pid, Report(
                         reason, s.outcomes, s.events, inbox, s.notices,
                         comms.channels(pid, ctx), info, manages,
-                        comms.directory(pid, ctx) if manages else [])))
+                        comms.directory(pid, ctx) if manages else [],
+                        getattr(comms, "wants_focus", False))))
                     s.outcomes, s.events, s.inbox, s.notices = [], [], [], []
 
             futures = {pid: pool.submit(slots[pid].agent.decide, game.observe(pid), report)
@@ -202,6 +203,8 @@ def run_game(game: Game, agents: list[Agent], clock: Clock | None = None,
                 log.extend(_apply_channel_ops(pid, decision, slots, comms, ctx, tick))
             for pid, decision in landed:
                 log.extend(_send(pid, decision, slots, comms, ctx, tick))
+            if hasattr(comms, "flush"):  # smart channels: relay digests
+                log.extend(_relay(comms, slots, ctx, tick))
 
             actions = {}
             for pid, s in slots.items():
@@ -267,9 +270,17 @@ def _send(pid: int, decision: Decision, slots: dict[int, _Slot], comms: Router, 
             slots[pid].notices.append(f"message not sent: you cannot post to "
                                       f"'{out.channel}' (your channels: {allowed or 'none'})")
             continue
+        msg = Message(tick, pid, out.channel, out.text, [])
+        if hasattr(comms, "post"):  # smart channel: buffered for the relay, not delivered
+            members = comms.post(msg, ctx, focus)
+            slots[pid].sent += 1
+            events.append(Event(tick, "message", {"from": pid, "channel": out.channel,
+                                                  "text": out.text, "to": [],
+                                                  "relay_members": members}))
+            continue
         recipients = [r for r in comms.route(pid, out.channel, out.text, ctx, focus)
                       if r in slots and r != pid]
-        msg = Message(tick, pid, out.channel, out.text, recipients)
+        msg.recipients = recipients
         if hasattr(comms, "touch"):
             comms.touch(pid, out.channel, ctx, tick)
         slots[pid].sent += 1
@@ -279,6 +290,22 @@ def _send(pid: int, decision: Decision, slots: dict[int, _Slot], comms: Router, 
             slots[r].received_chars += len(out.text)
         events.append(Event(tick, "message", {"from": pid, "channel": out.channel,
                                               "text": out.text, "to": recipients}))
+    return events
+
+
+def _relay(comms, slots: dict[int, _Slot], ctx, tick: int) -> list[Event]:
+    profiles = {pid: f"{ctx.describe_player(pid)}; focus: {s.focus or 'not stated'}; doing: "
+                     f"{'; '.join(getattr(s.agent, 'last_orders', [])[:2]) or 'nothing yet'}"
+                for pid, s in slots.items()}
+    events = []
+    for digest in comms.flush(tick, profiles):
+        for r in digest.recipients:
+            if r in slots:
+                slots[r].inbox.append(digest)
+                slots[r].received += 1
+                slots[r].received_chars += len(digest.text)
+        events.append(Event(tick, "digest", {"channel": digest.channel, "to": digest.recipients,
+                                             "text": digest.text}))
     return events
 
 

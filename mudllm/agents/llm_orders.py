@@ -212,7 +212,7 @@ class LLMOrderAgent:
             "description": "true: keep your current orders and queue these after them; "
                            "false: replace them",
         }
-        if "auto" in channels:
+        if "auto" in channels or report.wants_focus:
             props["focus"] = {"type": "string",
                               "description": "a few words on what you are working on; "
                                              "messages are routed to you by relevance to this"}

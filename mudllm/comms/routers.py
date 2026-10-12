@@ -163,7 +163,7 @@ class Hypergraph:
     An upper bound, since agents don't get this structure for free in reality.
     """
 
-    name = "hypergraph"
+    name = "oracle-hypergraph"
 
     def describe(self) -> str:
         return ("You can post to group channels you belong to; each reaches only that "
@@ -188,7 +188,7 @@ class ShuffledHypergraph(Hypergraph):
     mapping (within each team). Same channel count, sizes, and overlap; wrong people.
     """
 
-    name = "shuffled-hypergraph"
+    name = "oracle-shuffled"
 
     def __init__(self, seed: int = 0):
         self.seed = seed
@@ -357,6 +357,7 @@ class Vector:
     """
 
     name = "vector"
+    wants_focus = True
 
     def __init__(self, embedder: Embedder | None = None, threshold: float = 0.25,
                  top_k: int = 4, scope: str = "all"):
@@ -434,9 +435,11 @@ class PerTeam:
 
 
 ROUTERS = {"none": NoComms, "broadcast": Broadcast, "team": Team, "spatial": Spatial,
-           "random-k": RandomK, "hypergraph": Hypergraph,
-           "shuffled-hypergraph": ShuffledHypergraph, "self-organized": SelfOrganized,
-           "vector": Vector}
+           "random-k": RandomK, "oracle-hypergraph": Hypergraph,
+           "oracle-shuffled": ShuffledHypergraph, "self-organized": SelfOrganized,
+           "vector": Vector,
+           # older names, kept so earlier results and commands still work
+           "hypergraph": Hypergraph, "shuffled-hypergraph": ShuffledHypergraph}
 
 
 def make_router(name: str, **kwargs) -> Router:

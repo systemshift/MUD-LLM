@@ -84,5 +84,5 @@ def test_live_dungeon_game(server):
             break
         time.sleep(0.1)
     assert data["error"] is None
-    assert data["meta"]["game"] == "dungeon" and data["meta"]["comms"] == "hypergraph"
+    assert data["meta"]["game"] == "dungeon" and data["meta"]["comms"] == "oracle-hypergraph"
     assert data["frames"][-1]["tick"] == 15

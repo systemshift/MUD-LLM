@@ -223,7 +223,8 @@ def main():
     exp.add_argument("--sizes", type=int, nargs="+", default=[16, 32, 64])
     exp.add_argument("--comms", nargs="+",
                      default=["none", "broadcast", "random-k", "self-organized", "vector",
-                              "hypergraph", "shuffled-hypergraph"],
+                              "oracle-hypergraph", "oracle-shuffled", "mediator",
+                              "mediated-hyperedges"],
                      help="comms modes; for versus use 'modeA:modeB' (team 1 vs team 2)")
     exp.add_argument("--seeds", type=int, nargs="+", default=[1, 2])
     exp.add_argument("--policy", default="llm", choices=["llm", "local", "oracle"])
@@ -238,6 +239,8 @@ def main():
     exp.add_argument("--inbox-cap", type=int, default=40)
     exp.add_argument("--memory", default="window", choices=["window", "chain", "none"])
     exp.add_argument("--random-k", type=int, default=6)
+    exp.add_argument("--relay-period", type=int, default=5,
+                     help="smart channels: ticks between relay digests")
     exp.add_argument("--budget", type=float, default=5.0, help="USD cap across the whole grid")
     exp.add_argument("--workers", type=int, default=2, help="cells run in parallel")
     exp.set_defaults(func=lambda a: __import__("mudllm.experiment", fromlist=["run_grid"])

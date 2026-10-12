@@ -14,6 +14,7 @@ from mudllm.experiment import analyze, bootstrap_ci, build, router_for, run_grid
 def args(**kw):
     base = dict(model="fake", effort="low", memory="window", think_ticks=0, max_ticks=40,
                 heartbeat=10, inbox_cap=40, random_k=6, embedder="hash", policy="local",
+                relay_period=5,
                 budget=1.0, workers=2, envs=["dungeon"], sizes=[16], comms=["none"],
                 seeds=[1])
     return SimpleNamespace(**(base | kw))
@@ -93,7 +94,8 @@ def test_prompts_identical_across_comms_conditions_apart_from_comms(env):
     """No condition may hand agents information through anything but its router."""
     a = args(policy="llm")
     texts = {}
-    for comms in ["none", "broadcast", "self-organized", "hypergraph"]:
+    for comms in ["none", "broadcast", "self-organized", "oracle-hypergraph", "mediator",
+                  "mediated-hyperedges"]:
         game, agents = build(env, 16, 3, "llm", a)
         provider = Fake()
         agent = agents[0]
