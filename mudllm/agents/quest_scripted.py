@@ -16,13 +16,30 @@ from .providers import Usage
 PERFORM = 15
 
 
+def _supply(game: QuestGame, pid: int, item: str) -> list[Intent] | None:
+    """Orders to obtain one `item` (MMO): craft it if we can, else gather a missing part.
+    Returns None if we already carry it."""
+    me = game.players[pid]
+    if me.items.get(item, 0) > 0:
+        return None
+    recipe = dict(game.config.recipes)[item]
+    missing = [r for r in recipe if me.items.get(r, 0) < 1]
+    if not missing:
+        return [Intent("craft", params={"item": item})]
+    res = missing[0]
+    zone = min((z for z in range(game.num_zones) if game.zone_resource[z] == res),
+               key=lambda z: (game.dist[me.zone][z], z))
+    go = [Intent("goto", params={"zone": zone})] if me.zone != zone else []
+    return go + [Intent("gather", ticks=game.config.gather_ticks)]
+
+
 def _orders_for(quest: dict, cls: str, here: int, at_tick: int | None = None) -> list[Intent]:
     """What a player of this class does for a visible quest."""
     q, zone = quest["id"], quest["zone"]
     if quest["kind"] == "gates":
         zone = min(quest["gates"], key=lambda g: (g[0] != here, g[0]))[0]
     go = [Intent("goto", params={"zone": zone})] if here != zone else []
-    if quest["kind"] == "boss":
+    if quest["kind"] in ("boss", "raid"):
         if cls == "frost":
             return go + [Intent("chill", params={"quest": q, "at_tick": at_tick or 0}),
                          Intent("attack", params={"quest": q}, ticks=2)]
@@ -40,7 +57,7 @@ def _useful(quest: dict, cls: str) -> bool:
         return cls in quest["need"]
     if quest["kind"] == "vault":
         return cls == "locksmith"
-    return True  # gates and bosses take anyone
+    return True  # gates, bosses, raids, and deliveries take anyone
 
 
 class LocalAgent:
@@ -70,6 +87,10 @@ class LocalAgent:
         if options:
             q = max(options, key=lambda q: (q["points"] / (1 + q["distance"]), -q["id"]))
             self.last_orders = [f"{q['kind']} {q['id']} at {q['zone_name']}"]
+            if q.get("item") and q["kind"] == "delivery":
+                supply = _supply(self.game, self.player_id, q["item"])
+                if supply:
+                    return supply
             return _orders_for(q, obs.cls, obs.zone)
         target = self.rng.randrange(self.game.num_zones)
         self.last_orders = [f"wander to {self.game.zone_names[target]}"]
@@ -111,6 +132,9 @@ class OraclePlanner:
                     taken = {t for t, _ in team}
                     team += [(p, ("gate", gate)) for p in nearest(gate, free - taken)]
                 ok = len(team) == 3
+            elif q.kind == "delivery":
+                team = [(p, "deliver") for p in nearest(q.zone, free)]
+                ok = len(team) == 1
             elif q.kind == "vault":
                 carrier = [q.key_holder] if q.key_holder else nearest(
                     q.key_zone if q.key_zone is not None else q.zone, free)
@@ -118,9 +142,10 @@ class OraclePlanner:
                 team = [(p, "carry") for p in carrier] + [(p, "perform") for p in smith]
                 ok = len(team) == 2
             else:
-                frost = nearest(q.zone, free, 3, "frost")
-                fire = nearest(q.zone, free - set(frost), 1, "fire")
-                healer = nearest(q.zone, free - set(frost) - set(fire), 1, "healer")
+                big = q.kind == "raid"
+                frost = nearest(q.zone, free, 5 if big else 3, "frost")
+                fire = nearest(q.zone, free - set(frost), 2 if big else 1, "fire")
+                healer = nearest(q.zone, free - set(frost) - set(fire), 2 if big else 1, "healer")
                 team = ([(p, "frost") for p in frost] + [(p, "fire") for p in fire]
                         + [(p, "healer") for p in healer])
                 ok = len(frost) >= 2 and fire
@@ -156,6 +181,12 @@ class OracleAgent:
         q = view["id"]
         g = self.planner.game
         self.last_orders = [f"{role} for {view['kind']} {q}"]
+        if role == "deliver":
+            supply = _supply(g, self.player_id, view["item"])
+            if supply:
+                return supply
+            go = [Intent("goto", params={"zone": view["zone"]})] if obs.zone != view["zone"] else []
+            return go + [Intent("perform", params={"quest": q}, ticks=3)]
         if role == "carry":
             quest = g.quests[q]
             if quest.key_holder == self.player_id:

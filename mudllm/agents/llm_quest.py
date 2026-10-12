@@ -45,22 +45,41 @@ ORDERS (give_orders, up to {MAX_ORDERS}, run in order; if one fails the rest are
 - at_tick schedules chill/ignite for an exact tick (0 = as soon as off cooldown); a scheduled action that can't happen then fails.
 You are woken when your orders finish or fail, and every few ticks. Communication options, if any, are described each turn.
 
-MAP (zone id, name, exits; regions in order):
+{mmo_section(c, game)}MAP (zone id, name, exits; regions in order):
 {world_map(game)}"""
+
+
+def mmo_section(c: QuestConfig, game: QuestGame) -> str:
+    if not c.mmo:
+        return ""
+    regions = "; ".join(f"{name}: {game.zone_resource[next(z for z in range(game.num_zones) if game.zone_region[z] == r)]}"
+                        for r, name in enumerate(game.region_names))
+    recipes = "; ".join(f"{item} = {' + '.join(parts)}" for item, parts in c.recipes)
+    return f"""ECONOMY:
+- Each region yields one resource: {regions}. `gather` there ({c.gather_ticks} gather ticks per unit; carry at most {c.inventory_cap} items).
+- Recipes: {recipes}. `craft(item)` anywhere if you carry the parts. `give(item, player)` hands one item to a player in your zone (trading).
+- delivery quests ({QUEST_POINTS["delivery"]} pts): bring the named item to the quest zone and `perform` there.
+- Some rituals also need someone who performs to carry a named item (it is used up).
+- raids ({QUEST_POINTS["raid"]} pts, {c.raid_hp} HP) are huge bosses: many frost stacks plus fire, healers to keep people up.
+
+"""
 
 
 ORDER_SCHEMA = {
     "type": "object",
     "properties": {
         "action": {"type": "string", "enum": ["goto", "perform", "pick", "drop", "chill",
-                                              "ignite", "attack", "heal", "wait"]},
+                                              "ignite", "attack", "heal", "wait", "gather",
+                                              "craft", "give"]},
+        "item": {"type": "string", "description": "craft/give item name, else empty"},
+        "player": {"type": "integer", "description": "give recipient, else 0"},
         "zone": {"type": "integer", "description": "goto target zone id, else 0"},
         "quest": {"type": "integer", "description": "quest id, else 0"},
         "at_tick": {"type": "integer", "description": "chill/ignite exact tick, 0 = asap"},
         "ticks": {"type": "integer", "description": "duration for perform/attack/heal/wait"},
         "why": {"type": "string", "description": "a few words"},
     },
-    "required": ["action", "zone", "quest", "at_tick", "ticks", "why"],
+    "required": ["action", "zone", "quest", "at_tick", "ticks", "item", "player", "why"],
     "additionalProperties": False,
 }
 
@@ -69,7 +88,11 @@ def describe_quest(q: dict) -> str:
     base = f"quest {q['id']} {q['kind']} ({q['points']} pts, due t{q['deadline']})"
     if q["kind"] == "ritual":
         need = ", ".join(f"{n} {cls}" for cls, n in q["need"].items())
-        return f"{base} at zone {q['zone']} {q['zone_name']}: needs {need}; progress {q['progress']}"
+        item = f" and a carried {q['item']}" if q.get("item") else ""
+        return (f"{base} at zone {q['zone']} {q['zone_name']}: needs {need}{item}; "
+                f"progress {q['progress']}")
+    if q["kind"] == "delivery":
+        return f"{base}: bring a {q['item']} to zone {q['zone']} {q['zone_name']}"
     if q["kind"] == "gates":
         gates = ", ".join(f"{z} {name}" for z, name in q["gates"])
         return f"{base}: gates {gates}; progress {q['progress']}"
@@ -110,8 +133,13 @@ class LLMQuestAgent(LLMOrderAgent):
         if a in ("chill", "ignite"):
             return Intent(a, params={"quest": quest, "at_tick": int(order.get("at_tick", 0) or 0)},
                           ref=call_id)
-        if a in ("heal", "wait"):
+        if a in ("heal", "wait", "gather"):
             return Intent(a, ticks=ticks, ref=call_id)
+        if a == "craft":
+            return Intent("craft", params={"item": str(order.get("item", ""))}, ref=call_id)
+        if a == "give":
+            return Intent("give", params={"item": str(order.get("item", "")),
+                                          "player": int(order.get("player", 0) or 0)}, ref=call_id)
         return None
 
     def describe(self, obs: QuestObservation) -> str:
@@ -135,6 +163,9 @@ class LLMQuestAgent(LLMOrderAgent):
         s = obs.status
         lines.append(f"Wounds {s['wounds']}; chill ready t{s['chill_ready']}; "
                      f"ignite ready t{s['ignite_ready']}.")
+        if self.game.config.mmo:
+            items = ", ".join(f"{n} {k}" for k, n in s["items"].items()) or "nothing"
+            lines.append(f"You carry: {items}. Resource here: {s['resource_here']}.")
         lines.append(f"Team: score {obs.team['score']:.0%}, {obs.team['done']} quests done, "
                      f"{obs.team['expired']} expired.")
         return "\n".join(lines)

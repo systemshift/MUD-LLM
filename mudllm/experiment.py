@@ -30,10 +30,10 @@ from .agents.providers import Usage
 from .comms import PerTeam, make_router
 from .loop import Clock, run_game
 
-ENVIRONMENTS = ("dungeon", "quest", "bomber", "versus", "knowledge")
+ENVIRONMENTS = ("dungeon", "quest", "bomber", "versus", "knowledge", "mmo")
 # per-environment time limits (the dungeon's 4000-HP monsters take longer)
 DEFAULT_MAX_TICKS = {"dungeon": 250, "quest": 150, "bomber": 150, "versus": 150,
-                     "knowledge": 120}
+                     "knowledge": 120, "mmo": 200}
 
 
 def max_ticks_for(env: str, args) -> int:
@@ -86,11 +86,11 @@ def build(env: str, size: int, seed: int, policy: str, args) -> tuple[Any, list]
         make = {"llm": lambda p: LLMDungeonAgent(p, config, provider(), **llm_kwargs),
                 "local": lambda p: IndependentAgent(p, config),
                 "oracle": lambda p: OracleAgent(p, game)}
-    elif env == "quest":
+    elif env in ("quest", "mmo"):
         from .agents.llm_quest import LLMQuestAgent
         from .agents.quest_scripted import LocalAgent, OracleAgent, OraclePlanner
         from .games.quest import QuestConfig, QuestGame
-        game = QuestGame(QuestConfig(num_players=size), seed=seed)
+        game = QuestGame(QuestConfig(num_players=size, mmo=env == "mmo"), seed=seed)
         planner = OraclePlanner(game)
         make = {"llm": lambda p: LLMQuestAgent(p, game, provider(), **llm_kwargs),
                 "local": lambda p: LocalAgent(p, game),
@@ -152,7 +152,7 @@ def primary_score(env: str, game, result, max_ticks: int) -> float:
         kills = result.game["killed"]
         return round(sum((max_ticks - t) / max_ticks for t in kills.values())
                      / len(game.monsters), 4)
-    if env in ("quest", "bomber", "knowledge"):
+    if env in ("quest", "bomber", "knowledge", "mmo"):
         return result.game["score"]
     # versus: team 1's share of points earned (stones, iron, treasures; hits cost respawn time)
     earned = result.game["team_earned"]
@@ -167,7 +167,7 @@ def env_details(env: str, game, result) -> dict:
         return {"killed": len(result.game["killed"]), "monsters": len(game.monsters),
                 "avg_stacks": round(sum(f["stacks"] for f in fires) / max(1, len(fires)), 2),
                 "wasted_fires": sum(f["stacks"] <= 1 for f in fires)}
-    if env == "quest":
+    if env in ("quest", "mmo"):
         g = result.game
         return {"quests_done": g["quests_done"], "quests_total": g["quests_total"],
                 "by_kind": g["by_kind"]}

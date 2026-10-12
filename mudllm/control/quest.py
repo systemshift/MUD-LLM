@@ -63,6 +63,10 @@ class QuestController:
                 if e.kind == "drop":
                     self._issued = None
                     return self._finish("done", f"dropped the key for quest {d['quest']}", e.tick)
+                if e.kind in ("craft", "give"):
+                    self._issued = None
+                    what = e.data["item"] + (f" to P{e.data['to']}" if e.kind == "give" else "")
+                    return self._finish("done", f"{e.kind} {what}", e.tick)
                 if e.kind == "chill":
                     self._issued = None
                     return self._finish("done", f"chilled quest {d['quest']} at t{e.tick}", e.tick)
@@ -121,6 +125,19 @@ class QuestController:
             if intent.elapsed > max(1, intent.ticks):
                 return None, "done", f"healed for {intent.ticks} tick(s)"
             return ("heal",), "running", ""
+
+        if intent.kind == "gather":
+            if intent.elapsed > max(1, intent.ticks):
+                return None, "done", f"gathered for {intent.ticks} tick(s)"
+            return ("gather",), "running", ""
+
+        if intent.kind in ("craft", "give"):
+            if self._issued is intent:
+                return ("pass",), "running", ""
+            self._issued = intent
+            if intent.kind == "craft":
+                return ("craft", p.get("item", "")), "running", ""
+            return ("give", p.get("item", ""), int(p.get("player", 0) or 0)), "running", ""
 
         q = self._quest(intent)
         if q is None:

@@ -15,6 +15,11 @@ Quest types
           for base * 3^stacks; regenerating HP; bosses wound players, healers heal
 
 Score = points earned / points of all quests spawned.
+
+MMO mode (QuestConfig(mmo=True)) adds an economy: each region yields one resource
+(gather), recipes combine resources from different regions (craft), co-located
+players can trade (give), delivery quests need a crafted item brought to a zone,
+some rituals also need a crafted item, and raids are big bosses for many players.
 """
 
 import random
@@ -24,7 +29,9 @@ from dataclasses import asdict, dataclass, field
 from ...sim import Event
 
 CLASSES = ("frost", "fire", "healer", "scout", "locksmith")
-QUEST_POINTS = {"ritual": 3, "vault": 4, "gates": 5, "boss": 6}
+QUEST_POINTS = {"ritual": 3, "vault": 4, "gates": 5, "boss": 6, "delivery": 5, "raid": 12}
+RESOURCES = ("ore", "herb", "wood", "crystal")
+FIGHTS = ("boss", "raid")
 
 ADJ = ["Mossy", "Ashen", "Sunken", "Gilded", "Hollow", "Frozen", "Crimson", "Silent",
        "Broken", "Misty", "Thorny", "Amber", "Iron", "Pale", "Verdant", "Shattered",
@@ -58,6 +65,17 @@ class QuestConfig:
     wound_limit: int = 6  # wounds from a boss before being downed
     downed_ticks: int = 8
     initial_quests: float = 0.15  # quests per player already active at tick 0
+    # MMO mode: economy, crafting, trading, deliveries, raids
+    mmo: bool = False
+    recipes: tuple = (("potion", ("herb", "crystal")), ("torch", ("wood", "ore")),
+                      ("charm", ("crystal", "ore")))
+    gather_ticks: int = 2  # gather actions per resource unit
+    inventory_cap: int = 6
+    raid_hp: int = 1500
+    item_ritual: float = 0.35  # share of MMO rituals that also need a crafted item
+    mmo_type_weights: tuple[tuple[str, float], ...] = (
+        ("ritual", 0.25), ("vault", 0.15), ("gates", 0.15), ("boss", 0.12),
+        ("delivery", 0.25), ("raid", 0.08))
 
 
 @dataclass
@@ -77,6 +95,7 @@ class Quest:
     stacks: dict[int, int] = field(default_factory=dict)  # boss: player -> expires
     progress: int = 0
     contributors: set[int] = field(default_factory=set)  # boss: everyone who dealt damage
+    item: str | None = None  # delivery / item ritual: crafted item required
     status: str = "active"  # active | done | expired
     finished: int | None = None
 
@@ -96,6 +115,8 @@ class QPlayer:
     ignite_ready: int = 0
     points: float = 0.0  # credit: quest points split among contributors
     contributions: int = 0
+    items: dict[str, int] = field(default_factory=dict)  # MMO: resources and crafted items
+    gather_progress: int = 0
 
 
 @dataclass
@@ -186,6 +207,17 @@ class QuestGame:
             a, b = rng.sample(range(regions), 2) if regions > 2 else (0, 0)
             link(rng.choice(members[a]), rng.choice(members[b]))
         self.adj = {z: sorted(v) for z, v in adj.items()}
+        # MMO: resources are regional, so recipes need travel or trade. With fewer regions
+        # than resources, each region hosts several, in separate groups of its zones.
+        per_region = -(-len(RESOURCES) // regions)
+        self.zone_resource = []
+        for z in range(n):
+            if not c.mmo:
+                self.zone_resource.append(None)
+                continue
+            r = self.zone_region[z]
+            group = members[r].index(z) * per_region // len(members[r])
+            self.zone_resource.append(RESOURCES[(r * per_region + group) % len(RESOURCES)])
         self.edges = sorted({tuple(sorted((a, b))) for a in adj for b in adj[a]})
         self.dist = [self._bfs(z) for z in range(n)]
         # layout for the viewer: regions on a circle, zones around each region centre
@@ -225,16 +257,23 @@ class QuestGame:
 
     def _spawn(self):
         c, rng = self.config, self.rng
-        kinds, weights = zip(*c.type_weights, strict=True)
+        kinds, weights = zip(*(c.mmo_type_weights if c.mmo else c.type_weights), strict=True)
         kind = rng.choices(kinds, weights)[0]
         zone = rng.randrange(self.num_zones)
         lo, hi = c.deadline
         q = Quest(self._next_quest, kind, zone, QUEST_POINTS[kind], self.tick,
                   self.tick + rng.randint(lo, hi))
+        recipes = dict(c.recipes)
         if kind == "ritual":
             picks = rng.sample(CLASSES, rng.choice([2, 3]))
             q.need = {cls: 1 for cls in picks}
             q.need[picks[0]] += 1 if rng.random() < 0.5 else 0
+            if c.mmo and rng.random() < c.item_ritual:
+                q.item = rng.choice(sorted(recipes))
+        elif kind == "delivery":
+            q.item = rng.choice(sorted(recipes))
+        elif kind == "raid":
+            q.hp = q.max_hp = c.raid_hp
         elif kind == "vault":
             far = [z for z in range(self.num_zones) if self.dist[zone][z] >= 3] or \
                   [z for z in range(self.num_zones) if z != zone]
@@ -302,6 +341,12 @@ class QuestGame:
                     p.inventory.remove(q.id)
                     q.key_holder, q.key_zone = None, p.zone
                     events.append(Event(t, "drop", {"player": pid, "quest": q.id, "zone": p.zone}))
+            elif kind == "gather":
+                events += self._gather(t, p)
+            elif kind == "craft":
+                events += self._craft(t, p, str(a[1]))
+            elif kind == "give":
+                events += self._give(t, p, str(a[1]), int(a[2]))
             elif kind == "heal":
                 if p.cls != "healer":
                     events.append(self._fail(t, pid, "heal", "only healers can heal"))
@@ -319,7 +364,7 @@ class QuestGame:
             events += self._progress(t, q, performing.get(q.id, set()))
 
         for q in self.active_quests():  # expiry, boss upkeep
-            if q.kind == "boss":
+            if q.kind in FIGHTS:
                 q.stacks = {pid: exp for pid, exp in q.stacks.items() if exp > t}
                 q.hp = min(q.max_hp, q.hp + c.boss_regen)
                 for p in self.players.values():
@@ -360,11 +405,11 @@ class QuestGame:
         if p.zone not in q.zones():
             return [self._fail(t, p.id, kind, f"quest {qid} is not in your zone")]
         if kind == "perform":
-            if q.kind == "boss":
+            if q.kind in FIGHTS:
                 return [self._fail(t, p.id, kind, "bosses are fought with chill/ignite/attack")]
             performing.setdefault(q.id, set()).add(p.id)
             return []
-        if q.kind != "boss":
+        if q.kind not in FIGHTS:
             return [self._fail(t, p.id, kind, f"quest {qid} is not a boss")]
         if kind == "chill":
             if p.cls != "frost" or p.chill_ready > t:
@@ -396,15 +441,22 @@ class QuestGame:
 
     def _progress(self, t, q: Quest, performers: set[int]) -> list[Event]:
         c = self.config
-        if q.kind == "boss":
+        if q.kind in FIGHTS:
             return []
         here = [self.players[pid] for pid in performers]
         ok = False
+        carrier = next((p for p in here if q.item and p.items.get(q.item, 0) > 0), None)
+        if q.kind == "delivery":  # instant once someone carrying the item performs there
+            if carrier:
+                carrier.items[q.item] -= 1
+                return self._complete(t, q, {carrier.id})
+            return []
         if q.kind == "ritual":
             counts: dict[str, int] = {}
             for p in here:
                 counts[p.cls] = counts.get(p.cls, 0) + 1
-            ok = all(counts.get(cls, 0) >= n for cls, n in q.need.items())
+            ok = all(counts.get(cls, 0) >= n for cls, n in q.need.items()) and (
+                q.item is None or carrier is not None)
         elif q.kind == "gates":
             ok = all(any(p.zone == g for p in here) for g in q.gates)
         elif q.kind == "vault":
@@ -413,9 +465,48 @@ class QuestGame:
                   and any(p.cls == "locksmith" for p in here))
         q.progress = q.progress + 1 if ok else 0
         if q.progress >= c.hold:
+            if q.item and carrier:
+                carrier.items[q.item] -= 1
             contributors = set(performers) | ({q.key_holder} if q.key_holder else set())
             return self._complete(t, q, contributors)
         return []
+
+    # ------------------------------------------------------------------ economy (MMO)
+
+    def _gather(self, t, p: QPlayer) -> list[Event]:
+        res = self.zone_resource[p.zone]
+        if res is None:
+            return [self._fail(t, p.id, "gather", "nothing to gather here")]
+        if sum(p.items.values()) >= self.config.inventory_cap:
+            return [self._fail(t, p.id, "gather", "inventory full")]
+        p.gather_progress += 1
+        if p.gather_progress < self.config.gather_ticks:
+            return []
+        p.gather_progress = 0
+        p.items[res] = p.items.get(res, 0) + 1
+        return [Event(t, "gather", {"player": p.id, "resource": res, "zone": p.zone})]
+
+    def _craft(self, t, p: QPlayer, item: str) -> list[Event]:
+        recipe = dict(self.config.recipes).get(item)
+        if recipe is None:
+            return [self._fail(t, p.id, "craft", f"no recipe for {item}")]
+        missing = [r for r in recipe if p.items.get(r, 0) < 1]
+        if missing:
+            return [self._fail(t, p.id, "craft", f"missing {', '.join(missing)} for {item}")]
+        for r in recipe:
+            p.items[r] -= 1
+        p.items[item] = p.items.get(item, 0) + 1
+        return [Event(t, "craft", {"player": p.id, "item": item})]
+
+    def _give(self, t, p: QPlayer, item: str, to: int) -> list[Event]:
+        other = self.players.get(to)
+        if other is None or other.zone != p.zone or to == p.id:
+            return [self._fail(t, p.id, "give", f"P{to} is not in your zone")]
+        if p.items.get(item, 0) < 1:
+            return [self._fail(t, p.id, "give", f"you have no {item}")]
+        p.items[item] -= 1
+        other.items[item] = other.items.get(item, 0) + 1
+        return [Event(t, "give", {"player": p.id, "to": to, "item": item})]
 
     def _complete(self, t, q: Quest, contributors: set[int]) -> list[Event]:
         q.status, q.finished = "done", t
@@ -442,6 +533,8 @@ class QuestGame:
         v = {"id": q.id, "kind": q.kind, "zone": q.zone, "zone_name": self.zone_names[q.zone],
              "points": q.points, "deadline": q.deadline, "status": q.status,
              "progress": q.progress}
+        if q.item:
+            v["item"] = q.item
         if q.kind == "ritual":
             v["need"] = dict(q.need)
         elif q.kind == "gates":
@@ -450,7 +543,7 @@ class QuestGame:
             v["key_zone"] = q.key_zone
             v["key_zone_name"] = self.zone_names[q.key_zone] if q.key_zone is not None else None
             v["key_holder"] = q.key_holder
-        else:
+        elif q.kind in FIGHTS:
             v.update(hp=q.hp, max_hp=q.max_hp, stacks=len(q.stacks))
         return v
 
@@ -495,7 +588,9 @@ class QuestGame:
             visible_quests=sorted(quests, key=lambda v: v["distance"]),
             visible_keys=keys, inventory=inventory,
             status={"wounds": p.wounds, "downed_until": p.downed_until,
-                    "chill_ready": p.chill_ready, "ignite_ready": p.ignite_ready},
+                    "chill_ready": p.chill_ready, "ignite_ready": p.ignite_ready,
+                    "items": {k: v for k, v in p.items.items() if v},
+                    "resource_here": self.zone_resource[p.zone]},
             team={"score": self.score(), "points": self.points_earned,
                   "done": sum(q.status == "done" for q in self.quests.values()),
                   "expired": sum(q.status == "expired" for q in self.quests.values())},
@@ -555,6 +650,11 @@ class QuestGame:
         elif q.kind == "gates":
             for gate in q.gates:
                 picks += nearest(gate, 2)
+        elif q.kind == "delivery":
+            picks += nearest(q.zone, 3)
+        elif q.kind == "raid":
+            picks += nearest(q.zone, 5, "frost") + nearest(q.zone, 2, "fire") + \
+                nearest(q.zone, 2, "healer")
         else:
             picks += nearest(q.zone, 3, "frost") + nearest(q.zone, 2, "fire") + \
                 nearest(q.zone, 1, "healer")

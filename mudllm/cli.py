@@ -219,7 +219,7 @@ def main():
     exp = sub.add_parser("experiment", help="controlled grid: env x size x comms x seed")
     exp.add_argument("--out", required=True, help="output directory (resumable)")
     exp.add_argument("--envs", nargs="+", default=["dungeon"],
-                     choices=["dungeon", "quest", "bomber", "versus", "knowledge"])
+                     choices=["dungeon", "quest", "bomber", "versus", "knowledge", "mmo"])
     exp.add_argument("--sizes", type=int, nargs="+", default=[16, 32, 64])
     exp.add_argument("--comms", nargs="+",
                      default=["none", "broadcast", "random-k", "self-organized", "vector",
