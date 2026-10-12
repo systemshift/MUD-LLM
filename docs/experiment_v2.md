@@ -4,6 +4,27 @@ Status: design, not yet built. Supersedes the v1 scaling pilot (`runs/scale`, 9 
 games, stopped 2026-10-11), which had no controls for audience size, compute, or
 privileged topology.
 
+## Revision (2026-10-12, after two pilots)
+
+- **Terminology**: every condition is a hypergraph (a channel is a hyperedge). They
+  differ in who forms the edges: one giant edge (broadcast), random edges, agents
+  (self-organized), relevance (vector), or the game's ground truth
+  (`oracle-hypergraph`, with `oracle-shuffled` as its control).
+- **Smart channels** (the user's core idea): a channel is itself a model that reads
+  the traffic and each member's situation, and delivers each agent only what is
+  relevant, as a digest. Conditions: `mediator` (one smart channel for everyone) and
+  `mediated-hyperedges` (several smart channels, agents listen to a few). Mediator
+  tokens count toward the condition's cost; mediators see only what agents share
+  plus self-reported profiles, never hidden game state.
+- **Environments**: add a *distributed knowledge* environment (pure information
+  routing at 100s-1000s of agents) and a *richer MMO* (the quest world plus
+  resources, professions, crafting, trading, item-gated quests, raids). Quest world
+  and Bomberman remain as supporting environments.
+- **Planned additions** discussed: a `hierarchy` condition (squads plus a leaders'
+  channel), inbox-cap sensitivity (20 / 40 / unlimited) to test the attention
+  bottleneck causally, and tracking how self-organized agents shift traffic from
+  all-member channels to small channels as N grows.
+
 ## Question and hypotheses
 
 Large teams of LLM agents must coordinate on tasks that need shifting subgroups.
