@@ -16,6 +16,7 @@ state, and its token cost is tracked so it can be charged to the condition.
 """
 
 import json
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 
 from ..agents.providers import Usage
@@ -35,15 +36,19 @@ RELAY_TOOL = function_tool("deliver", "Send digests to the channel members who n
     },
 })
 
-RELAY_INSTRUCTIONS = """You are a communication relay inside a team of cooperating agents. You read the messages players posted to your channel and a profile of each member, and you send each member a short digest containing ONLY what helps them act right now: requests they can fulfil, plans that involve them, information about places or tasks they are involved in or near. Merge duplicates, resolve contradictions when you can, and keep each digest under {chars} characters. Quote concrete details (ids, places, ticks) exactly. Never invent facts. Skip members for whom nothing is relevant."""
+RELAY_INSTRUCTIONS = """You are a communication relay inside a team of cooperating agents. You read what players posted to your channel (recent history, with the newest marked NEW) and a profile of each member: where they are, what they are working on and WHAT THEY NEED, what they are doing, and the last digest you sent them. Send each member a digest containing ONLY what helps them act now:
+- if a member needs a fact or item that someone posted, pass it on VERBATIM with who posted it;
+- if nobody has posted it yet, say who is most likely to have it (by their profile) so they can ask;
+- pass on requests they can fulfil and plans that involve them.
+Do not repeat what you already sent them unless it changed. Merge duplicates, resolve contradictions when you can, keep each digest under {chars} characters, and never invent facts. Skip members for whom nothing is new or relevant."""
 
 
 class Mediated:
     wants_focus = True
     family = "hypergraph"  # transforms information; everything in routers.py is a graph
 
-    def __init__(self, base: Router, provider, name: str | None = None, period: int = 5,
-                 max_messages: int = 150, batch: int = 16, digest_chars: int = 300):
+    def __init__(self, base: Router, provider, name: str | None = None, period: int = 2,
+                 max_messages: int = 150, batch: int = 16, digest_chars: int = 500):
         self.base = base
         self.provider = provider
         self.name = name or f"mediated-{base.name}"
@@ -55,17 +60,22 @@ class Mediated:
         self.errors = 0
         self.manages_channels = getattr(base, "manages_channels", False)
         self.free_channels = getattr(base, "free_channels", False)
-        self.buffer: dict[str, list[tuple[Message, set[int]]]] = {}
+        # rolling history per channel, so facts posted earlier can still reach later askers
+        self.history: dict[str, deque[tuple[Message, set[int]]]] = {}
+        self.fresh: set[str] = set()  # channels with messages since the last relay
         self.last_flush = 0
+        self.last_profiles: dict[int, str] = {}
+        self.last_digest: dict[int, str] = {}
         self.digests_sent = 0
 
     # ------------------------------------------------------------------ router API
 
     def describe(self) -> str:
         return (f"{self.base.describe()} Channels are relayed: a relay model reads what is "
-                f"posted and every {self.period} ticks sends each member a short digest of what "
-                f"matters to them (you never see raw messages). Write clearly what you need or "
-                f"offer, and keep your focus up to date so the relay knows what is relevant to you.")
+                f"posted (and remembers recent history) and every {self.period} ticks sends each "
+                f"member a short digest of what matters to them; you never see raw messages. "
+                f"Post facts and requests clearly, and keep your focus up to date with what you "
+                f"are doing AND what information or help you need, so the relay can bring it to you.")
 
     def channels(self, pid, ctx):
         return self.base.channels(pid, ctx)
@@ -79,11 +89,13 @@ class Mediated:
         return []  # nothing is delivered directly; see post()
 
     def post(self, msg: Message, ctx, focus) -> list[int]:
-        """Buffer a message for the relay. Returns the channel's current members."""
+        """Record a message for the relay. Returns the channel's current members."""
         members = set(self.base.route(msg.sender, msg.channel, msg.text, ctx, focus))
         members.add(msg.sender)
         team = ctx.team(msg.sender) if getattr(self.base, "scope", "all") == "team" else None
-        self.buffer.setdefault(f"{team}:{msg.channel}", []).append((msg, members))
+        key = f"{team}:{msg.channel}"
+        self.history.setdefault(key, deque(maxlen=self.max_messages)).append((msg, members))
+        self.fresh.add(key)
         return sorted(members - {msg.sender})
 
     # pass-throughs for channel management (self-organized membership)
@@ -109,35 +121,41 @@ class Mediated:
     # ------------------------------------------------------------------ relay
 
     def flush(self, tick: int, profiles: dict[int, str]) -> list[Message]:
-        """Every `period` ticks, turn buffered traffic into per-member digests."""
-        if tick - self.last_flush < self.period or not any(self.buffer.values()):
+        """Every `period` ticks, relay channels with new messages or members whose needs changed."""
+        if tick - self.last_flush < self.period or not self.history:
             return []
-        self.last_flush = tick
+        changed = {p for p, prof in profiles.items() if prof != self.last_profiles.get(p)}
+        since = self.last_flush
         jobs = []
-        for key, items in self.buffer.items():
-            if not items:
+        for key, items in self.history.items():
+            members = sorted(set().union(*(mem for _, mem in items)))
+            if key not in self.fresh and not changed.intersection(members):
                 continue
             channel = key.split(":", 1)[1]
-            msgs = [m for m, _ in items][-self.max_messages:]
-            members = sorted(set().union(*(mem for _, mem in items)))
+            msgs = [m for m, _ in items]
             for i in range(0, len(members), self.batch):
-                jobs.append((channel, msgs, members[i:i + self.batch]))
-        self.buffer = {}
+                jobs.append((channel, msgs, members[i:i + self.batch], since))
+        self.last_flush, self.fresh, self.last_profiles = tick, set(), dict(profiles)
+        if not jobs:
+            return []
         out: list[Message] = []
-        with ThreadPoolExecutor(max_workers=min(8, max(1, len(jobs)))) as pool:
+        with ThreadPoolExecutor(max_workers=min(8, len(jobs))) as pool:
             for channel, digests in pool.map(lambda j: (j[0], self._relay(*j, profiles)), jobs):
                 for pid, text in digests:
                     out.append(Message(tick, 0, f"{channel} (relay)", text, [pid]))
+                    self.last_digest[pid] = text
         self.digests_sent += len(out)
         return out
 
-    def _relay(self, channel: str, msgs: list[Message], members: list[int],
+    def _relay(self, channel: str, msgs: list[Message], members: list[int], since: int,
                profiles: dict[int, str]) -> list[tuple[int, str]]:
-        traffic = "\n".join(f"[t{m.tick}] P{m.sender}: {m.text}" for m in msgs)
-        roster = "\n".join(f"P{p}: {profiles.get(p, 'no profile')}" for p in members)
-        prompt = (f"CHANNEL: {channel}\n\nMESSAGES SINCE LAST RELAY:\n{traffic}\n\n"
-                  f"MEMBERS TO SERVE (profile: where they are, their focus, what they are doing):\n"
-                  f"{roster}\n\nCall deliver with digests for the members who need something.")
+        traffic = "\n".join(f"{'NEW ' if m.tick >= since else ''}[t{m.tick}] P{m.sender}: {m.text}"
+                             for m in msgs)
+        roster = "\n".join(f"P{p}: {profiles.get(p, 'no profile')}; last digest you sent: "
+                            f"{self.last_digest.get(p, 'none')!r}" for p in members)
+        prompt = (f"CHANNEL: {channel}\n\nRECENT MESSAGES (oldest first):\n{traffic}\n\n"
+                  f"MEMBERS TO SERVE:\n{roster}\n\n"
+                  f"Call deliver with digests for the members who need something new.")
         try:
             completion = self.provider.complete(
                 RELAY_INSTRUCTIONS.format(chars=self.digest_chars),

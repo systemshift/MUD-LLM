@@ -238,8 +238,11 @@ def main():
     exp.add_argument("--inbox-cap", type=int, default=40)
     exp.add_argument("--memory", default="window", choices=["window", "chain", "none"])
     exp.add_argument("--random-k", type=int, default=6)
-    exp.add_argument("--relay-period", type=int, default=5,
+    exp.add_argument("--relay-period", type=int, default=2,
                      help="smart channels: ticks between relay digests")
+    exp.add_argument("--relay-model", help="model for relays (default: same as agents)")
+    exp.add_argument("--relay-effort", help="reasoning effort for relays (default: --effort)")
+    exp.add_argument("--relay-chars", type=int, default=500, help="max characters per digest")
     exp.add_argument("--budget", type=float, default=5.0, help="USD cap across the whole grid")
     exp.add_argument("--workers", type=int, default=2, help="cells run in parallel")
     exp.set_defaults(func=lambda a: __import__("mudllm.experiment", fromlist=["run_grid"])

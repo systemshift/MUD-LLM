@@ -135,8 +135,10 @@ def router_for(comms: str, seed: int, args, team_scope: bool):
             from .comms.mediated import Mediated
             base = relays[name]
             relay = (args.relay_provider() if hasattr(args, "relay_provider")
-                     else OpenAIProvider(args.model, args.effort))
-            return Mediated(one(base), relay, name=name, period=args.relay_period)
+                     else OpenAIProvider(getattr(args, "relay_model", None) or args.model,
+                                         getattr(args, "relay_effort", None) or args.effort))
+            return Mediated(one(base), relay, name=name, period=args.relay_period,
+                            digest_chars=getattr(args, "relay_chars", 500))
         kwargs: dict[str, Any] = {}
         if name in ("broadcast", "random-k", "spatial", "self-organized", "groups", "vector",
                     "dm", "chatbox") and team_scope:

@@ -88,3 +88,26 @@ def test_agents_get_focus_field_for_smart_channels():
     agent.decide(BombermanGame(seed=1).observe(1),
                  Report("start", channels=["all"], comms_info="relayed", wants_focus=True))
     assert "focus" in provider.tools[0]["parameters"]["properties"]
+
+
+def test_relay_remembers_history_and_reacts_to_new_needs():
+    from mudllm.comms import Message
+    relay = FakeRelay()
+    router = Mediated(make_router("broadcast"), relay, period=1)
+
+    class Ctx:
+        def player_ids(self):
+            return [1, 2, 3]
+
+        def team(self, p):
+            return 1
+
+    ctx = Ctx()
+    router.post(Message(1, 1, "all", "Oslo code is 4821"), ctx, {})
+    router.flush(2, {1: "a", 2: "b", 3: "c"})
+    assert "NEW [t1] P1: Oslo code is 4821" in relay.prompts[-1]
+    assert router.flush(3, {1: "a", 2: "b", 3: "c"}) == []  # nothing new, nobody's needs changed
+    router.flush(4, {1: "a", 2: "b", 3: "needs Oslo code"})  # P3's needs changed: relay again
+    assert "[t1] P1: Oslo code is 4821" in relay.prompts[-1]  # earlier fact still available
+    assert "NEW [t1]" not in relay.prompts[-1]
+    assert "last digest you sent" in relay.prompts[-1]

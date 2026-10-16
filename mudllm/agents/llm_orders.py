@@ -227,8 +227,9 @@ class LLMOrderAgent:
         }
         if "auto" in channels or report.wants_focus:
             props["focus"] = {"type": "string",
-                              "description": "a few words on what you are working on; "
-                                             "messages are routed to you by relevance to this"}
+                              "description": "what you are working on AND what information or "
+                                             "help you need right now (be specific: ids, names, "
+                                             "places); information is routed to you by this"}
         return function_tool("give_orders", "Queue orders (and send messages).", props)
 
 
